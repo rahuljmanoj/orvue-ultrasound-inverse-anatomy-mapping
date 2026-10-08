@@ -2,7 +2,7 @@
 import numpy as np
 import pytest
 
-from orvue_us_inverse.mapping.probe import PROBE, make_simulator, probe_metadata
+from orvue_us_inverse.mapping.probe import FRAME_SHAPE, PROBE, make_simulator, probe_metadata, simulator_settings
 from orvue_us_inverse.simulation.bmode import BModeSimulator
 
 EXPECTED = dict(f0_mhz=7.5, width_mm=30.0, depth_mm=50.0, px_mm=0.1, fnum=3.0, cycles=2.5,
@@ -43,3 +43,18 @@ def test_frame_independent_of_previous_pose(sim):
     sim.render(A)
     sim._rng = np.random.default_rng(0)
     assert np.array_equal(sim.render(B), expected)
+
+
+def test_frame_shape_constant(sim):
+    assert FRAME_SHAPE == (sim.nz, sim.nx) == (501, 301)
+
+
+def test_simulator_settings():
+    sim = make_simulator("choledocholithiasis", gain_db=3.0)
+    assert sim.case == "choledocholithiasis"
+    assert sim.settings == simulator_settings(gain_db=3.0)
+    assert sim.settings["gain_db"] == 3.0 and sim.gain_db == 3.0
+    assert sim.settings["persistence"] == 0.0 and sim.settings["dyn_range_db"] == sim.dr
+    assert "anatomy" not in sim.settings and "probe" not in sim.settings
+    with pytest.raises(TypeError):
+        simulator_settings(no_such_setting=1)

@@ -22,6 +22,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(PACKAGE_DIR))
 CONFIG_DIR = os.path.join(REPO_ROOT, "config")
 SETTINGS_PATH = os.path.join(CONFIG_DIR, "settings.json")
 CALIBRATION_PATH = os.path.join(CONFIG_DIR, "calibration.json")
+UPSTREAM_PATH = os.path.join(REPO_ROOT, "UPSTREAM.md")         # origin of the copied simulator code
 
 DOCS_DIR = os.path.join(REPO_ROOT, "docs")
 FIGURES_DIR = os.path.join(DOCS_DIR, "figures")

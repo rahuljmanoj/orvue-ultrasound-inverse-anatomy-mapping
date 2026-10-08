@@ -4,10 +4,10 @@ State of the inverse-mapping project. Updated at the end of every session (plan:
 
 | | |
 |---|---|
-| Repository | rahuljmanoj/orvue-ultrasound-inverse-anatomy-mapping, `main` after the Prep merge (branch `prep`, 2026-10-08) |
+| Repository | rahuljmanoj/orvue-ultrasound-inverse-anatomy-mapping, `main` after the S0 merge (branch `s0`, 2026-10-08) |
 | Simulator code | copied in from rahuljmanoj/orvue-ultrasound-simulator `e789389`; frozen; see `UPSTREAM.md` |
 | Environment | conda env `orvue-robot`, Python 3.11.16 (`C:/Users/rahul/miniconda3/envs/orvue-robot/python.exe`); import check passed (Prep P2) |
-| Last update | 2026-10-08, after the Prep session |
+| Last update | 2026-10-08, after S0 |
 
 ## Sessions
 
@@ -18,7 +18,8 @@ State of the inverse-mapping project. Updated at the end of every session (plan:
 | Prep P3 probe | Done | `mapping/probe.py`: `PROBE` (every field stated), `make_simulator` (persistence 0, not overridable), `probe_metadata`; `tests/mapping/test_probe.py` (4 tests; the previous-pose test fails with persistence 0.3, checked) |
 | Prep P4 CLAUDE.md | Done | "Inverse mapping" section; README "Every file" and layout updated |
 | Prep P5 baseline | Done | Tests below; frames and timings below; `tracking.markers` and `tracking.tracker` import without a camera (0.09 s) |
-| S0-S7 | Not started | No sweeps yet |
+| S0 skeleton, config, sweep format | Done | `mapping/config.py`, `mapping/sweep_io.py` implemented; `poses`, `acquisition`, `recon`, `render`, `evaluate`, `experiments`, `errors` are docstring placeholders; `tests/mapping/test_sweep_io.py` (11 tests) + 2 in `test_probe.py`. Details below |
+| S1-S7 | Not started | No sweeps yet |
 
 ## Prep frames and timing (2026-10-08)
 
@@ -34,10 +35,35 @@ with `COL_TAB`) in `output/prep_check/` (not in git); B-mode and labels agree by
 Mean over 20 frames (the three poses in turn, after one warm-up): `render()` **78.4 ms** (sd 2.5),
 `labels_image()` **13.4 ms** (sd 1.9). An oracle-only sweep of 1000 frames takes ~13 s of label computation.
 
+## S0 sweep format (2026-10-08)
+
+Test lane: normal case, x = 50, y 30 -> 54.5 mm at 0.5 mm, yaw 0, 50 frames, noise seeded.
+
+| | Actual | `estimate_size_mb` | Save | Load |
+|---|---|---|---|---|
+| With images | 4.99 MB | 5.09 MB (+2%) | 239 ms | 39 ms |
+| Labels only | 0.078 MB | 0.091 MB (+16%) | 43 ms | 9 ms |
+
+Compressed bytes per frame on 50-frame lanes of 3 cases x 4 lanes: images 96-106 kB in every case; labels
+1.4-1.6 kB over the anatomy, 150-200 B near the region edges. The estimate uses 100 kB + 1.5 kB per frame, so a
+labels-only estimate is an upper bound (up to ~4x high away from the anatomy, a few hundred kB absolute).
+800-frame sweep: ~81 MB with images, ~1.4 MB labels only.
+
+S0 deviations from the prompt:
+- `mapping/probe.py` (Prep) extended: `FRAME_SHAPE`, `simulator_settings(**kw)`, and `make_simulator` sets
+  `sim.case` / `sim.settings`, so `make_metadata(sim, ...)` records the effective simulator settings (the
+  `BModeSimulator` constructor defaults plus overrides, read from its signature; the copied file is unchanged).
+- Added beyond the prompt: `make_metadata()`, `paths.UPSTREAM_PATH` (a test checks `SIMULATOR_SOURCE_COMMIT`
+  against `UPSTREAM.md`), a `format_version` array in the file, input checks in `FrameRecord` / `Sweep` / configs.
+- The simulator commit is a constant (`sweep_io.SIMULATOR_SOURCE_COMMIT`) checked against `UPSTREAM.md` by a
+  test, not parsed from `UPSTREAM.md` at run time.
+- `SweepConfig` region as `region_x_mm` / `region_y_mm` bounds (0, 100), like `GridConfig`.
+
 ## Tests
 
-`python -m pytest tests` after Prep (2026-10-08): **69 passed, 1 xfailed** in 54 s (65 passed, 1 xfailed at `ff697fe`
-plus 4 in `tests/mapping/test_probe.py`; anatomy + tracking 58 passed, 1 xfailed, as upstream). The xfail is the known tracking limit
+`python -m pytest tests` after S0 (2026-10-08): **82 passed, 1 xfailed** in 60 s (Prep: 69 passed, 1 xfailed; S0 adds
+11 in `tests/mapping/test_sweep_io.py` and 2 in `test_probe.py`; anatomy + tracking 58 passed, 1 xfailed, as
+upstream). The 50-frame test lane renders once per module (~4.7 s). The xfail is the known tracking limit
 `300mm_tilt15` with ID 0 + ID 5 (face z error ~1.6 mm). `viewer3d/` is copied but untested here.
 
 ## Decisions
@@ -67,4 +93,4 @@ plus 4 in `tests/mapping/test_probe.py`; anatomy + tracking 58 passed, 1 xfailed
 
 ## Next step
 
-S0 (`PLAN_inverse_mapping.md`).
+S1 (`PLAN_inverse_mapping.md`): scripted sweep, acquisition and live playback.
