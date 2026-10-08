@@ -4,24 +4,25 @@ State of the inverse-mapping project. Updated at the end of every session (plan:
 
 | | |
 |---|---|
-| Repository | rahuljmanoj/orvue-ultrasound-inverse-anatomy-mapping, `main` after the S2 merge (branch `s2`, 2026-10-08) |
+| Repository | rahuljmanoj/orvue-ultrasound-inverse-anatomy-mapping, `main` after the S3 merge (branch `s3`, 2026-10-08) |
 | Simulator code | copied in from rahuljmanoj/orvue-ultrasound-simulator `e789389`; frozen; see `UPSTREAM.md` |
 | Environment | conda env `orvue-robot`, Python 3.11.16 (`C:/Users/rahul/miniconda3/envs/orvue-robot/python.exe`); import check passed (Prep P2) |
-| Last update | 2026-10-08, after S2 |
+| Last update | 2026-10-08, after S3 |
 
 ## Sessions
 
 | Session | State | Evidence / notes |
 |---|---|---|
 | Prep P1 data folders | Done | `paths.SWEEPS_DIR` (`output/sweeps`), `paths.RESULTS_DIR` (`output/results`); created on demand |
-| Prep P2 environment | Done | numpy 2.4.6, scipy 1.17.1, cv2 5.0.0 (`cv2.aruco` with `ArucoDetector`), scikit-image 0.26.0, matplotlib 3.11.2, reportlab 5.0.1, pytest 9.1.1, pyrealsense2 2.58.4 (optional); nothing missing. PyVista / VTK not imported (blocked) |
+| Prep P2 environment | Done | numpy 2.4.6, scipy 1.17.1, cv2 5.0.0 (`cv2.aruco` with `ArucoDetector`), scikit-image 0.26.0, matplotlib 3.11.2, reportlab 5.0.1, pytest 9.1.1, pyrealsense2 2.58.4 (optional); nothing missing. PyVista / VTK blocked at Prep; pyvista 0.49.0 / vtk 9.7.1 import and render since S3 (optional extra) |
 | Prep P3 probe | Done | `mapping/probe.py`: `PROBE` (every field stated), `make_simulator` (persistence 0, not overridable), `probe_metadata`; `tests/mapping/test_probe.py` (4 tests; the previous-pose test fails with persistence 0.3, checked) |
 | Prep P4 CLAUDE.md | Done | "Inverse mapping" section; README "Every file" and layout updated |
 | Prep P5 baseline | Done | Tests below; frames and timings below; `tracking.markers` and `tracking.tracker` import without a camera (0.09 s) |
 | S0 skeleton, config, sweep format | Done | `mapping/config.py`, `mapping/sweep_io.py` implemented; `poses`, `acquisition`, `recon`, `render`, `evaluate`, `experiments`, `errors` are docstring placeholders; `tests/mapping/test_sweep_io.py` (11 tests) + 2 in `test_probe.py`. Details below |
 | S1 scripted sweep, acquisition, playback | Done | `mapping/poses.py`, `mapping/acquisition.py`, app `mapping/run_scripted.py` (menu 4 `scripted`); `tests/mapping/test_poses_acquisition.py` (16), `test_run_scripted.py` (3). Details below |
 | S2 reconstruction (oracle labels) | Done | `mapping/recon.py`, script `mapping/reconstruct_sweep.py` (menu 5 `recon`); `tests/mapping/test_recon.py` (9). Details below |
-| S3-S7 | Not started | No saved sweeps in the repository (`output/` is gitignored) |
+| S3 live view of the reconstruction | Done | `mapping/render.py`, `mapping/live3d.py` (optional PyVista), `run_scripted.py` (live reconstruction, slices, coverage, 3D outputs); `tests/mapping/test_render.py` (8). Details below |
+| S4-S7 | Not started | No saved sweeps in the repository (`output/` is gitignored) |
 
 ## Prep frames and timing (2026-10-08)
 
@@ -128,10 +129,36 @@ S2 deviations from the prompt:
   `recon`), prints the accuracy against the ground truth, and draws unobserved voxels hatched (liver is grey).
 - Menu: 5 `recon` added; later steps now 6-10 (numbers right-aligned).
 
+## S3 live view (2026-10-08)
+
+Timing (normal case, 0.5 mm voxels, whole region): slice update 5-6 ms from the compounder (only the three
+slices are computed; target 50 ms); full `result()` 52 ms; `surface_meshes` 184-200 ms for 171 780 triangles
+(bile 96 084, venous blood 46 708, arterial blood 21 452, stone 5 532, lymph node 1 156; target 300 ms;
+142 ms without smoothing); `snapshot_3d` 1.3 s; STL export 22 ms; browser page 174 ms, 3.1 MB. Browser page
+checked with a headless Edge screenshot (cases reconstruction / reconstruction vs truth / ground truth). In the
+app: the reconstruction is updated with every captured frame (~10 ms, B-mode render ~76 ms), slices every 0.5 s,
+live 3D every 3 s (~250 ms mesh extraction blocks the loop briefly).
+
+S3 deviations from the prompt:
+- Added on request: browser 3D view (key b, `output/viewer3d/recon_<case>.html`, viewer3d template reused
+  unchanged; title of the page is the template's) and a live PyVista window (`mapping/live3d.py`, `--live3d` /
+  key p, menu step 4 starts with it).
+- Key a (revealed anatomy) replaced by v (cycles black box / coverage / revealed). Extra keys: g truth contours
+  (slices; truth also in the live window), PgUp / PgDn or [ / ] move the crosshair in depth.
+- `LabelCompounder.result_slice()` and `column_hits()` added to `recon.py` so the live views do not need the
+  full `result()`.
+- Surfaces are clamped to the grid bounds after smoothing (the portal vein is cut at z = 50 mm).
+- The snapshot draws bile at 45% opacity (stones visible inside); ground truth at 12%.
+- 3D outputs: snapshot `output/results/snapshot_<case>_<time>.png`; STL `output/export/recon_<case>_<time>/
+  recon_<group>.stl`.
+- Timing test uses the ground-truth volume as a perfect whole-region reconstruction (same size), not a
+  rendered 1604-frame sweep.
+- pyvista 0.49.0 / vtk 9.7.1 added to `requirements.txt` and as extra `view3d` (already installed).
+
 ## Tests
 
-`python -m pytest tests` after S2 (2026-10-08): **110 passed, 1 xfailed** in 96 s (S1: 101 passed, 1 xfailed; S2 adds
-9 in `tests/mapping/test_recon.py`; anatomy + tracking 58 passed, 1 xfailed, as upstream). Slowest mapping
+`python -m pytest tests` after S3 (2026-10-08): **118 passed, 1 xfailed** in 114 s (S2: 110 passed, 1 xfailed; S3 adds
+8 in `tests/mapping/test_render.py`; anatomy + tracking 58 passed, 1 xfailed, as upstream). Slowest mapping
 tests: the S2 ground-truth block sweep (~12 s), the S0 50-frame lane (~4.7 s), S2 incremental vs batch (~4.7 s). The xfail is the known tracking limit
 `300mm_tilt15` with ID 0 + ID 5 (face z error ~1.6 mm). `viewer3d/` is copied but untested here.
 
@@ -142,8 +169,9 @@ tests: the S2 ground-truth block sweep (~12 s), the S0 50-frame lane (~4.7 s), S
 - Probe for this project: 30 mm wide, 50 mm deep, 0.1 mm pixels, frames 501 x 301; simulator always with
   `persistence=0`.
 - Recognition: oracle labels first (per-frame ground truth from the simulator).
-- S3 / S4 3D: no PyVista / VTK. Proposed: OpenCV slice views, matplotlib off-screen snapshots, STL export.
-  **Open: confirm before S3.**
+- 3D views (decided at S3, 2026-10-08): OpenCV slice views, matplotlib off-screen snapshot and STL export
+  (always available, tested headless), plus a browser 3D page (viewer3d template, key b) and an optional live
+  PyVista window (`--live3d` / key p; pyvista now imports and renders here, kept optional with fallback).
 
 ## Known issues and risks
 
@@ -158,10 +186,14 @@ tests: the S2 ground-truth block sweep (~12 s), the S0 50-frame lane (~4.7 s), S
 - Tracking validated on synthetic images only; `get_pose()` is filtered (adds lag); `H_MM` = 0.0; calibration
   from 2026-10-06 (`config/calibration.json`).
 - Physical dummy probe face width (38 mm vs 30 mm) not recorded; check before S7.
-- The 3D viewer loads three.js from a CDN (needs internet).
+- The 3D viewer and the browser 3D view load three.js from a CDN (needs internet).
+- PyVista / VTK were blocked by Windows Application Control at Prep and work since S3: if the block returns,
+  the live 3D window reports it and the app continues (snapshot / browser view still work).
+- The live PyVista window shares the thread with the OpenCV windows (non-blocking `interactive_update`);
+  checked off-screen in the tests, the interactive window only by eye.
 
 ## Next step
 
-Reconstruct a saved sweep (`python -m orvue_us_inverse recon`) and look at the slice PNGs in `output/results/`;
-then S3 (`PLAN_inverse_mapping.md`): live view of the reconstruction. Open decision before S3: 3D view without
-PyVista / VTK (OpenCV slice views, matplotlib off-screen snapshots, STL export).
+Watch a full sweep with the live reconstruction (`python -m orvue_us_inverse scripted --yaw 0 90 --live3d`),
+check the slices, coverage, live 3D window and browser view by eye; then S4 (`PLAN_inverse_mapping.md`):
+evaluation and "complete".
