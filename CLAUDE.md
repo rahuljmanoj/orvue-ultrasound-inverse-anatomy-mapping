@@ -34,7 +34,7 @@ tests/                       test_template.py, test_standalone.py, test_anatomy.
                              helpers/synthetic_scene.py, mapping/test_probe.py,
                              mapping/test_sweep_io.py, mapping/test_poses_acquisition.py,
                              mapping/test_run_scripted.py, mapping/test_recon.py, mapping/test_render.py,
-                             mapping/test_evaluate.py
+                             mapping/test_evaluate.py, mapping/test_experiments.py
 output/                      run-time output, gitignored: captures/, logs/, export/, viewer3d/, cache/, sweeps/,
                              results/
 PLAN_inverse_mapping.md      session plan for the inverse mapping
@@ -49,11 +49,12 @@ UPSTREAM.md                  origin of the copied simulator code and its change 
   (stdin = DEVNULL, 1 s pause so the D405 is released). New steps: `COMMANDS` + `MENU`.
 - `paths.py`: REPO_ROOT, PACKAGE_DIR, LOGO_PATH, SETTINGS_PATH, CALIBRATION_PATH, UPSTREAM_PATH, DOCS_DIR, FIGURES_DIR,
   IMAGES_DIR, PRINT_DIR, MANUAL_PDF, BOARD_PDF, OUTPUT_DIR, CAPTURES_DIR, LOGS_DIR, EXPORT_DIR, VIEWER3D_OUT_DIR,
-  CACHE_DIR, SWEEPS_DIR, RESULTS_DIR.
+  CACHE_DIR, SWEEPS_DIR, RESULTS_DIR, EXPERIMENTS_CACHE_DIR.
 - `core/example.py`: example area module (`load_settings`, `scaled`, `main`).
 - `mapping/`: inverse mapping (see Inverse mapping): `probe.py`, `config.py`, `sweep_io.py`, `poses.py`,
   `acquisition.py`, `recon.py`, `render.py`, `live3d.py` (optional PyVista), `evaluate.py`, app `run_scripted.py`,
-  scripts `reconstruct_sweep.py`, `evaluate_sweep.py`; placeholders `experiments.py`, `errors.py`.
+  `experiments.py`, scripts `reconstruct_sweep.py`, `evaluate_sweep.py`, `run_experiments.py`; placeholder
+  `errors.py`.
 - Copied from the simulator (`UPSTREAM.md`):
   - `simulation/anatomy.py`: tissue table `TISSUES` (labels 0-10), `Tube` / `Blob`, `Anatomy`, `build_case`,
     `CASES`, `CONNECTED`, `validate()`, `calot_triangle()`. All geometry lives here.
@@ -227,7 +228,8 @@ caterpillar_hump, inflamed_obese (5 mm GB wall, 9 mm fat, impacted Hartmann ston
   | `live3d.py` | `Live3D` PyVista window (`update(meshes, gt)`, `process()`, `closed`, `screenshot`); optional extra `view3d` | S3 |
   | `evaluate.py` | `instance_masks(an, grid)` (tube lumen sd < 0 / wall 0 <= sd < wall, blob interior; flat indices), `evaluate(labels, an, grid, gt, instances, case, extra)` -> `Evaluation(report, ...)`, `surface_distances`, `summary_table`, `write_report(ev, folder)` (report.json, report.md, overlay_3d.png, structures.png), `overlay_3d`, `structure_chart` | S4 |
   | `evaluate_sweep.py` | Script `python -m orvue_us_inverse.mapping.evaluate_sweep [sweep.npz] [--fill]` (menu step `evaluate`) | S4 |
-  | `experiments.py` | Headless parameter studies | S5, S7 |
+  | `experiments.py` | `ExperimentGrid` (spacing x overlap x orientation sets x cases + extras: 0.25 mm voxels and half-voxel grid offset for the default), `RunSpec`, `estimate`, `acquire_sweep` (one cached oracle sweep per case / yaw / spacing / overlap, reused by every orientation set and voxel size), `run_one` (reconstruct, fill up to round(spacing / voxel) - 1, evaluate, per-structure local Dice / MSD / HD95), `run_experiments` (process pool) -> results.csv, plots, summary.md; `aggregate`, `recommend`; S7 adds pose errors | S5, S7 |
+  | `run_experiments.py` | Script `python -m orvue_us_inverse experiments [--workers N] [--quick] [--yes]` (menu step 7) | S5 |
   | `errors.py` | Pose-error injection | S7 |
 
 - Sweep file (`sweep_io`, format 1): one compressed .npz with `index` (N,), `t` (N,) simulated seconds,
@@ -294,13 +296,15 @@ caterpillar_hump, inflamed_obese (5 mm GB wall, 9 mm fat, impacted Hartmann ston
 - Install once: `pip install -r requirements.txt` and `pip install -e .`.
 - `python -m orvue_us_inverse` (menu) or
   `python -m orvue_us_inverse viewer | calibrate | sim | scripted | recon | evaluate | run | test | board |
-  anatomy | manual`.
+  experiments | anatomy | manual`.
 - `python -m orvue_us_inverse scripted [--case X] [--yaw 0 90] [--overlap 20] [--spacing 0.5] [--speed 10]
   [--no-images] [--live3d]` (keys space pause, + / - speed, v top view (black box / coverage / anatomy), r restart, s save sweep, 3 3D snapshot + STL, b browser 3D, p live 3D, g truth contours, c complete (evaluate, report), e error colouring, slices: click / arrows / PgUp PgDn, q quit).
 - `python -m orvue_us_inverse recon [sweep.npz] [--voxel 0.5] [--fill] [--max-gap 1] [--splat 0]`
   (default: the newest sweep in `output/sweeps/`).
 - `python -m orvue_us_inverse evaluate [sweep.npz] [--voxel 0.5] [--fill] [--max-gap 1]` (default: newest sweep;
   report folder `output/results/<case>_<time>/`).
+- `python -m orvue_us_inverse experiments [--workers 10] [--quick] [--yes] [--max-minutes 30]`: prints the estimate;
+  above 30 min (wall clock) only the reduced grid runs unless --yes; output `output/results/experiments_<time>/`.
 - `python -m orvue_us_inverse sim [case] [--track] [--cam-view] [--mouse]` (keys q/e yaw, n/p case, g ground truth,
   c contact, m camera / mouse, t camera view, z zoom fit, v 3D viewer, Esc quit).
 - Tests: `python -m pytest tests` from the repository root (no hardware needed; ~2 min).

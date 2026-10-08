@@ -60,6 +60,9 @@ python -m orvue_us_inverse recon        reconstruct a sweep ([sweep.npz, default
                                         -> output/results/recon_<name>.npz + 3 slice PNGs vs ground truth
 python -m orvue_us_inverse evaluate     evaluate a sweep against the ground truth ([sweep.npz] [--voxel 0.5]
                                         [--fill]) -> output/results/<case>_<time>/ (report.md, .json, figures)
+python -m orvue_us_inverse experiments  sweep-strategy study, headless, parallel ([--workers N] [--quick]
+                                        [--yes]) -> output/results/experiments_<time>/ (results.csv, plots,
+                                        summary.md); sweeps cached in output/cache/experiments/
 python -m orvue_us_inverse run          example step -> output/logs/example.txt
 python -m orvue_us_inverse test         all tests
 python -m orvue_us_inverse board        -> docs/print/tracking_board.pdf
@@ -126,7 +129,8 @@ output/                  generated at run time, gitignored: captures/, logs/, ex
 | `src/orvue_us_inverse/mapping/live3d.py` | Optional live PyVista 3D window of the reconstruction (`pip install -e .[view3d]`) (S3) |
 | `src/orvue_us_inverse/mapping/evaluate.py` | Ground-truth instance masks, class metrics (Dice, IoU, precision, recall, MSD, HD95), structure detection, bile topology, report (S4) |
 | `src/orvue_us_inverse/mapping/evaluate_sweep.py` | Script: saved sweep -> reconstruction -> evaluation report in `output/results/<case>_<time>/` (S4) |
-| `src/orvue_us_inverse/mapping/experiments.py` | Headless parameter studies; placeholder until S5 (S7 adds pose errors) |
+| `src/orvue_us_inverse/mapping/experiments.py` | Sweep-strategy study: grid, cached oracle sweeps, parallel runs, per-structure metrics, CSV, plots, summary and recommendation (S5) |
+| `src/orvue_us_inverse/mapping/run_experiments.py` | Script: runtime estimate, full or reduced grid, prints the summary table and recommendation (S5) |
 | `src/orvue_us_inverse/mapping/errors.py` | Pose-error injection (jitter, bias, latency, scale); placeholder until S7 |
 | `src/orvue_us_inverse/simulation/__init__.py` | Simulation sub-package (copied) |
 | `src/orvue_us_inverse/simulation/anatomy.py` | Virtual anatomy: tissue table (labels 0-10), tubes / blobs, the 8 cases, `validate` (copied, read-only) |
@@ -158,6 +162,7 @@ output/                  generated at run time, gitignored: captures/, logs/, ex
 | `tests/mapping/test_poses_acquisition.py` | Lane layout and overlap, coverage, triggers over full sweeps, no capture in transitions, save / load |
 | `tests/mapping/test_run_scripted.py` | Scripted-sweep app without windows: stepping, drawing, file name, save; menu step |
 | `tests/mapping/test_evaluate.py` | Perfect reconstruction, one-voxel shift, cut cystic duct, not covered vs missed, report files, script, app complete |
+| `tests/mapping/test_experiments.py` | Grid and sweep reuse, runtime estimate, a 2-run grid headless with CSV columns, plots, summary, cache reuse |
 | `tests/mapping/test_render.py` | Slice shapes / colours / idempotence, meshes inside the grid, timing, snapshot, STL, browser page, app outputs, PyVista off-screen |
 | `tests/mapping/test_recon.py` | `pixel_points` = `plane_points`, accuracy against the ground truth, incremental = batch, hole filling, script |
 

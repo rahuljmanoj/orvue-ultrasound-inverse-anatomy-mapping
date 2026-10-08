@@ -39,3 +39,4 @@ VIEWER3D_OUT_DIR = os.path.join(OUTPUT_DIR, "viewer3d")
 CACHE_DIR = os.path.join(OUTPUT_DIR, "cache")
 SWEEPS_DIR = os.path.join(OUTPUT_DIR, "sweeps")
 RESULTS_DIR = os.path.join(OUTPUT_DIR, "results")
+EXPERIMENTS_CACHE_DIR = os.path.join(CACHE_DIR, "experiments")   # cached sweeps of the S5 study

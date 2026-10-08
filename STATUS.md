@@ -4,10 +4,10 @@ State of the inverse-mapping project. Updated at the end of every session (plan:
 
 | | |
 |---|---|
-| Repository | rahuljmanoj/orvue-ultrasound-inverse-anatomy-mapping, `main` after the S4 merge (branch `s4`, 2026-10-08) |
+| Repository | rahuljmanoj/orvue-ultrasound-inverse-anatomy-mapping, `main` after the S5 merge (branch `s5`, 2026-10-08) |
 | Simulator code | copied in from rahuljmanoj/orvue-ultrasound-simulator `e789389`; frozen; see `UPSTREAM.md` |
 | Environment | conda env `orvue-robot`, Python 3.11.16 (`C:/Users/rahul/miniconda3/envs/orvue-robot/python.exe`); import check passed (Prep P2) |
-| Last update | 2026-10-08, after S4 |
+| Last update | 2026-10-08, after S5 |
 
 ## Sessions
 
@@ -23,7 +23,8 @@ State of the inverse-mapping project. Updated at the end of every session (plan:
 | S2 reconstruction (oracle labels) | Done | `mapping/recon.py`, script `mapping/reconstruct_sweep.py` (menu 5 `recon`); `tests/mapping/test_recon.py` (9). Details below |
 | S3 live view of the reconstruction | Done | `mapping/render.py`, `mapping/live3d.py` (optional PyVista), `run_scripted.py` (live reconstruction, slices, coverage, 3D outputs); `tests/mapping/test_render.py` (8). Details below |
 | S4 evaluation and "complete" | Done | `mapping/evaluate.py`, script `mapping/evaluate_sweep.py` (menu 6 `evaluate`), key c in `run_scripted.py`; `tests/mapping/test_evaluate.py` (10). Details below |
-| S5-S7 | Not started | Sweeps and reports in `output/` (gitignored) |
+| S5 sweep-strategy experiments | Done | `mapping/experiments.py`, script `mapping/run_experiments.py` (menu 7 `experiments`); `tests/mapping/test_experiments.py` (5); full grid 156 runs in 16 min. Details below |
+| S6-S7 | Not started | Sweeps and reports in `output/` (gitignored) |
 
 ## Prep frames and timing (2026-10-08)
 
@@ -221,10 +222,79 @@ S4 deviations from the prompt / decisions:
 - Key c also opens the report folder in Explorer; menu step 6 `evaluate` (with `--fill`) added, later steps
   now 7-11.
 
+## S5 sweep-strategy experiments (2026-10-08)
+
+Full grid: spacing 0.25 / 0.5 / 1 / 2 mm x overlap 20 / 40 / 50 % x orientations [0] / [90] / [0+90] / [0+45+90+135]
+x cases normal, parallel_cystic_duct, anterior_cystic_artery at 0.5 mm voxels (144 runs) + extras for the default
+(0.5 mm, 20 %, [0] and [0+90]): 0.25 mm voxels and the 0.5 mm grid shifted by half a voxel (12 runs). 144 cached
+single-orientation oracle sweeps (148 524 frames, 113 MB in `output/cache/experiments/`), 298 716 frame insertions.
+Estimate printed first: 93 min serial, ~11 min with 10 workers (below 30 min, so the full grid ran after the
+reduced grid); actual 16.0 min (the 0.25 mm voxel runs are slower than modelled). Results:
+`output/results/experiments_20261008-160406/` (results.csv, summary.md, 5 plots).
+
+Means over the 3 cases (thin = cystic duct + the 3 cystic artery branches; min = worst structure in any case):
+
+| Spacing | Overlap | Orientations | Frames | Scan (s) | Lumen Dice | Wall Dice | Thin recall | Min recall | Lumen HD95 | Detected |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 0.25 | 20 | 0 | 1604 | 47 | 0.968 | 0.856 | 87.6% | 80.8% | 0.50 | 42/42 |
+| 0.5 | 20 | 0 | 804 | 47 | 0.953 | 0.817 | 82.6% | 74.9% | 0.50 | 42/42 |
+| 1 | 20 | 0 | 404 | 47 | 0.932 | 0.780 | 66.9% | 50.7% | 0.50 | 42/42 |
+| 2 | 20 | 0 | 204 | 47 | 0.862 | 0.663 | 42.1% | 18.9% | 0.96 | 33/42 |
+| 0.5 | 40 | 0 | 1005 | 57 | 0.952 | 0.795 | 81.9% | 74.2% | 0.50 | 42/42 |
+| 0.5 | 50 | 0 | 1206 | 67 | 0.952 | 0.795 | 82.4% | 75.2% | 0.50 | 42/42 |
+| 0.5 | 20 | 90 | 804 | 47 | 0.948 | 0.725 | 83.4% | 74.3% | 0.50 | 42/42 |
+| 0.5 | 20 | 0+90 | 1608 | 96 | 0.949 | 0.763 | 82.8% | 75.1% | 0.50 | 42/42 |
+| 1 | 20 | 0+90 | 808 | 96 | 0.949 | 0.768 | 80.5% | 70.7% | 0.50 | 42/42 |
+| 0.25 | 20 | 0+90 | 3208 | 96 | 0.969 | 0.853 | 88.3% | 80.8% | 0.50 | 42/42 |
+| 0.5 | 20 | 0+45+90+135 | 3408 | 232 | 0.967 | 0.842 | 87.4% | 81.7% | 0.50 | 42/42 |
+| 0.25 | 20 | 0+45+90+135 | 6796 | 232 | 0.976 | 0.880 | 90.3% | 83.8% | 0.50 | 42/42 |
+| 0.5 (grid offset) | 20 | 0 | 804 | 47 | 0.975 | 0.867 | 91.9% | 86.6% | 0.50 | 42/42 |
+| 0.5 (grid offset) | 20 | 0+90 | 1608 | 96 | 0.980 | 0.895 | 92.3% | 86.0% | 0.50 | 42/42 |
+| 0.5 (0.25 mm voxels) | 20 | 0 | 804 | 47 | 0.959 | 0.841 | 80.4% | 69.4% | 0.28 | 42/42 |
+
+Topology GB - CBD ok in every run. All 48 strategies in `summary.md`.
+
+**Recommendation (rule in `experiments.recommend`): spacing 0.25 mm, 20 % overlap, yaw 0 only, 0.5 mm voxels**:
+1604 frames, 47 s at 10 mm/s; lumen Dice 0.968, thin recall 87.6%, worst structure 80.8%, all detected, topology ok.
+Rule: cheapest scan (then fewest frames) among strategies that detect every structure with correct topology in all
+cases and are within 0.01 of the best lumen Dice (0.976) and 3 points of the best thin recall (90.3%). The best
+quality, [0+45+90+135] at 0.25 mm, needs 5x the scan time (232 s) and 4x the frames for +0.008 Dice / +2.7 points.
+
+Findings:
+- Spacing matters most for thin structures: thin recall 87.6 / 82.6 / 66.9 / 42.1% at 0.25 / 0.5 / 1 / 2 mm (yaw 0);
+  2 mm misses cystic artery branches (33/42 detected). Large lumens change little (gallbladder Dice 0.99 -> 0.97).
+- Overlap adds nothing with exact poses (0.953 / 0.952 / 0.952 lumen Dice at 20 / 40 / 50 %) and costs 21-43 %
+  more scan time; it is expected to matter once pose errors are added (S7).
+- A second orientation (0+90) at the same spacing does not improve the 0.5 mm grid, but four orientations do; at
+  coarse spacing, more orientations compensate (0+90 at 1 mm ~ 0 at 0.5 mm with the same 800 frames).
+- The S4 voxel-face observation is confirmed: shifting the grid by half a voxel (frames at voxel centres) gives
+  lumen Dice 0.975 / thin recall 91.9% at 0.5 mm spacing, better than 0.25 mm spacing on the face-aligned grid.
+  Scripted sweeps can use this (grid origin at -voxel / 2); hand-held sweeps have random frame phase, so the
+  effect averages out there. 0.25 mm voxels with 0.5 mm spacing help HD95 (0.28 mm) but not recall.
+- Scan time is at a fixed 10 mm/s; at a real frame rate f the speed limit is spacing x f (0.25 mm at 20 frames/s:
+  5 mm/s, i.e. 94 s for the recommended sweep), relevant for S6.
+
+S5 deviations from the prompt / decisions:
+- Holes are filled up to round(spacing / voxel) - 1 voxels before evaluating (sparse sweeps interpolated between
+  frames; `observed_raw` in the CSV is before filling), so coarse spacings are judged on what they reconstruct, not
+  only on the voxel layers they hit.
+- Per-structure Dice / MSD / HD95 are local: the structure's effective voxels against the reconstructed voxels of its
+  label within 2 voxels of it, other structures of the same label excluded. Neighbours' boundary errors still count
+  (e.g. cystic duct local Dice ~0.65 in the normal case at 94% recall: GB wall voxels next to the duct reconstructed
+  as bile). The class-level metrics (S4) are in the CSV as well.
+- Extras added: half-voxel grid offset for the default (to test the S4 observation); 0.25 mm voxels for both default
+  orientation sets ([0] and [0+90], the plan's default and its second pass).
+- The 30-minute check uses the wall-clock estimate with the worker count (the runs are parallel).
+- `--resummarize FOLDER` rebuilds summary.md and the plots from results.csv; the recommendation tolerances were set
+  to 0.01 Dice / 3 points after the first full run (at 0.005 / 2 points the rule simply picked the best-quality
+  strategy); the best-quality strategy is reported alongside.
+- Menu step 7 `experiments`; later steps now 8-12. `paths.EXPERIMENTS_CACHE_DIR` added.
+
 ## Tests
 
-`python -m pytest tests` after S4 (2026-10-08): **128 passed, 1 xfailed** in 126 s (S3: 118 passed, 1 xfailed; S4 adds
-10 in `tests/mapping/test_evaluate.py`; anatomy + tracking 58 passed, 1 xfailed, as upstream). Slowest mapping
+`python -m pytest tests` after S5 (2026-10-08): **133 passed, 1 xfailed** in 153 s (S4: 128 passed, 1 xfailed; S5 adds
+5 in `tests/mapping/test_experiments.py`, the 2-run grid ~26 s; anatomy + tracking 58 passed, 1 xfailed, as
+upstream). Slowest mapping
 tests: the S2 ground-truth block sweep (~12 s), the S0 50-frame lane (~4.7 s), S2 incremental vs batch (~4.7 s). The xfail is the known tracking limit
 `300mm_tilt15` with ID 0 + ID 5 (face z error ~1.6 mm). `viewer3d/` is copied but untested here.
 
@@ -236,6 +306,8 @@ tests: the S2 ground-truth block sweep (~12 s), the S0 50-frame lane (~4.7 s), S
   `persistence=0`.
 - Recognition: oracle labels first (per-frame ground truth from the simulator).
 - Surface distance: standard symmetric MSD + HD95; shift test on HD95 (decided at S4, 2026-10-08).
+- Default sweep strategy (S5 recommendation, 2026-10-08, to confirm): 0.25 mm spacing, 20 % overlap, yaw 0, 0.5 mm
+  voxels; the code defaults (`SweepConfig`: 0.5 mm) are unchanged until confirmed.
 - 3D views (decided at S3, 2026-10-08): OpenCV slice views, matplotlib off-screen snapshot and STL export
   (always available, tested headless), plus a browser 3D page (viewer3d template, key b) and an optional live
   PyVista window (`--live3d` / key p; pyvista now imports and renders here, kept optional with fallback).
@@ -261,6 +333,5 @@ tests: the S2 ground-truth block sweep (~12 s), the S0 50-frame lane (~4.7 s), S
 
 ## Next step
 
-Look at the S4 reports in `output/results/` (report.md, overlay_3d.png, structures.png, slices_errors.png) and try
-key c in `python -m orvue_us_inverse scripted`; then S5 (`PLAN_inverse_mapping.md`): sweep-strategy
-experiments, including the voxel-face sampling observation above.
+Decide on the S5 recommendation (0.25 mm spacing, yaw 0; or keep 0.5 mm; grid offset for scripted sweeps) and
+whether to change the `SweepConfig` default; then S6 (`PLAN_inverse_mapping.md`): mouse sweeps.
