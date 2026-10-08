@@ -14,6 +14,7 @@ Commands (extra options are passed on to the module):
     sim         Ultrasound Imaging Simulator         orvue_us_inverse.simulation.bmode   [case] [--track] [--cam-view] [--mouse]
     scripted    scripted sweep, live reconstruction  orvue_us_inverse.mapping.run_scripted [--case X] [--yaw 0 90] [--no-images] [--live3d] ...
     recon       reconstruct a saved sweep            orvue_us_inverse.mapping.reconstruct_sweep [sweep.npz] [--voxel 0.5] [--fill] -> output/results/
+    evaluate    evaluate a saved sweep (report)      orvue_us_inverse.mapping.evaluate_sweep [sweep.npz] [--voxel 0.5] [--fill] -> output/results/
     run         example step                         orvue_us_inverse.core.example
     test        all tests                            pytest tests
     board       tracking board PDF                   orvue_us_inverse.tracking.board     -> docs/print/
@@ -40,6 +41,7 @@ COMMANDS = {
     "sim": (["-m", "orvue_us_inverse.simulation.bmode"], ROOT),
     "scripted": (["-m", "orvue_us_inverse.mapping.run_scripted"], ROOT),
     "recon": (["-m", "orvue_us_inverse.mapping.reconstruct_sweep"], ROOT),
+    "evaluate": (["-m", "orvue_us_inverse.mapping.evaluate_sweep"], ROOT),
     "run": (["-m", "orvue_us_inverse.core.example"], ROOT),
     "test": (["-m", "pytest", "tests", "-q"], ROOT),
     "board": (["-m", "orvue_us_inverse.tracking.board"], ROOT),
@@ -56,11 +58,13 @@ MENU = [
      ["--yaw", "0", "90", "--live3d"]),
     ("INVERSE MAPPING", "5", "Reconstruct latest sweep", "label volume + slice PNGs -> output/results/", "recon",
      []),
-    ("MAIN", "6", "Run example", "writes output/logs/example.txt", "run", []),
-    ("TOOLS", "7", "Run all tests", "no camera needed", "test", []),
-    ("TOOLS", "8", "Tracking board PDF", "regenerate docs/print/tracking_board.pdf", "board", []),
-    ("TOOLS", "9", "3D anatomy viewer", "every case in the browser (three.js)", "anatomy", []),
-    ("TOOLS", "10", "User manual PDF", "rebuild the manual from the code", "manual", []),
+    ("INVERSE MAPPING", "6", "Evaluate latest sweep", "report vs ground truth -> output/results/", "evaluate",
+     ["--fill"]),
+    ("MAIN", "7", "Run example", "writes output/logs/example.txt", "run", []),
+    ("TOOLS", "8", "Run all tests", "no camera needed", "test", []),
+    ("TOOLS", "9", "Tracking board PDF", "regenerate docs/print/tracking_board.pdf", "board", []),
+    ("TOOLS", "10", "3D anatomy viewer", "every case in the browser (three.js)", "anatomy", []),
+    ("TOOLS", "11", "User manual PDF", "rebuild the manual from the code", "manual", []),
 ]
 PROMPT = "Type a number and press Enter: "
 def command_line(command, options):
