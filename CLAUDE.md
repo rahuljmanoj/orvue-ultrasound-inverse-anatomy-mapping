@@ -31,7 +31,8 @@ docs/                        generated PDFs, figures/, images/, print/tracking_b
 scripts/rename_project.py    turns the template into a new project
 src/orvue_us_inverse/        the package (below)
 tests/                       test_template.py, test_standalone.py, test_anatomy.py, test_tracking.py,
-                             helpers/synthetic_scene.py, mapping/test_probe.py
+                             helpers/synthetic_scene.py, mapping/test_probe.py,
+                             mapping/test_sweep_io.py
 output/                      run-time output, gitignored: captures/, logs/, export/, viewer3d/, cache/, sweeps/,
                              results/
 PLAN_inverse_mapping.md      session plan for the inverse mapping
@@ -44,11 +45,12 @@ UPSTREAM.md                  origin of the copied simulator code and its change 
   `python -m orvue_us_inverse <command>` (`viewer`, `calibrate`, `sim`, `run`, `test`, `board`, `anatomy`,
   `manual`); console script `orvue-us-inverse`. Runs `python -m <module>` subprocesses from the repository folder
   (stdin = DEVNULL, 1 s pause so the D405 is released). New steps: `COMMANDS` + `MENU`.
-- `paths.py`: REPO_ROOT, PACKAGE_DIR, LOGO_PATH, SETTINGS_PATH, CALIBRATION_PATH, DOCS_DIR, FIGURES_DIR,
+- `paths.py`: REPO_ROOT, PACKAGE_DIR, LOGO_PATH, SETTINGS_PATH, CALIBRATION_PATH, UPSTREAM_PATH, DOCS_DIR, FIGURES_DIR,
   IMAGES_DIR, PRINT_DIR, MANUAL_PDF, BOARD_PDF, OUTPUT_DIR, CAPTURES_DIR, LOGS_DIR, EXPORT_DIR, VIEWER3D_OUT_DIR,
   CACHE_DIR, SWEEPS_DIR, RESULTS_DIR.
 - `core/example.py`: example area module (`load_settings`, `scaled`, `main`).
-- `mapping/probe.py`: `PROBE`, `make_simulator`, `probe_metadata` (see Inverse mapping).
+- `mapping/`: inverse mapping (see Inverse mapping): `probe.py`, `config.py`, `sweep_io.py`; placeholders
+  `poses.py`, `acquisition.py`, `recon.py`, `render.py`, `evaluate.py`, `experiments.py`, `errors.py`.
 - Copied from the simulator (`UPSTREAM.md`):
   - `simulation/anatomy.py`: tissue table `TISSUES` (labels 0-10), `Tube` / `Blob`, `Anatomy`, `build_case`,
     `CASES`, `CONNECTED`, `validate()`, `calot_triangle()`. All geometry lives here.
@@ -204,7 +206,28 @@ caterpillar_hump, inflamed_obese (5 mm GB wall, 9 mm fat, impacted Hartmann ston
   30 mm wide, 50 mm deep, 0.1 mm pixels, fnum 3, 2.5 cycles, elevation sigma 0.5 mm, focus 20 mm, Rayleigh 10 mm,
   c 1.54 mm/us), `make_simulator(case="normal", **kw)` (`BModeSimulator` with `PROBE` and `persistence=0`; passing
   `persistence` raises `TypeError`), `probe_metadata()` (every field as a dict, stored with each sweep). Never
-  build a `LinearProbe` or `BModeSimulator` directly in `mapping/`.
+  build a `LinearProbe` or `BModeSimulator` directly in `mapping/`. Also `FRAME_SHAPE` (501, 301) and
+  `simulator_settings(**kw)`; the simulator from `make_simulator` carries `.case` and `.settings` (for metadata).
+- Modules (`mapping/`) and the session that implements them:
+
+  | Module | Role | Session |
+  |---|---|---|
+  | `probe.py` | Probe, `make_simulator`, probe metadata | Prep |
+  | `config.py` | `GridConfig` (x, y 0-100, z 0-50 mm, 0.5 mm voxels -> shape (200, 200, 100) indexed [ix, iy, iz], voxel i centred at lo + (i + 0.5) * voxel), `SweepConfig` (yaw list, overlap %, spacing, angle trigger, speed, serpentine, region; probe width / depth from `PROBE`), `AcquisitionConfig` (`store_images`) | S0 |
+  | `sweep_io.py` | `FrameRecord` (index, t, T_true, T_measured, int8 labels, uint8 image or None), `Sweep` (metadata + frames; `save` / `load` .npz), `make_metadata`, `estimate_size_mb` | S0 |
+  | `poses.py` | Pose sources: scripted (S1), mouse (S6), camera (S7) | S1 |
+  | `acquisition.py` | Distance-triggered capture | S1 |
+  | `recon.py` | Voxel grid, label compounding, coverage | S2 |
+  | `render.py` | Slice views, surfaces, off-screen 3D snapshots | S3 |
+  | `evaluate.py` | Ground-truth voxels, metrics, report | S4 |
+  | `experiments.py` | Headless parameter studies | S5, S7 |
+  | `errors.py` | Pose-error injection | S7 |
+
+- Sweep file (`sweep_io`, format 1): one compressed .npz with `index` (N,), `t` (N,) simulated seconds,
+  `T_true`, `T_measured` (N, 4, 4), `labels` (N, 501, 301) int8, `images` (N, 501, 301) uint8 only when stored
+  (all frames or none), `metadata` (JSON: case, simulator settings, probe fields, frame shape, sweep and
+  acquisition configs, UTC timestamp, provenance = repository commit or None + simulator source `e789389`),
+  `format_version`. Size ~0.1 MB/frame with images, ~1.5 kB/frame labels only (800 frames: ~81 MB / ~1.4 MB).
 - Frames 501 x 301 (depth x lateral). Timing (Prep, 2026-10-08): `render()` ~78 ms/frame, `labels_image()`
   ~13 ms/frame; oracle-only sweeps use `labels_image()` alone.
 - Data: sweeps in `paths.SWEEPS_DIR` (`output/sweeps`), reconstructions / metrics / reports in

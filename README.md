@@ -106,7 +106,16 @@ output/                  generated at run time, gitignored: captures/, logs/, ex
 | `src/orvue_us_inverse/reports/pdf_template.py` | Orvue Surgical PDF template (`Doc`), used by every generated PDF |
 | `src/orvue_us_inverse/reports/manual.py` | Builds the user manual PDF from the code |
 | `src/orvue_us_inverse/mapping/__init__.py` | Inverse-mapping sub-package (reconstruction, recognition) |
-| `src/orvue_us_inverse/mapping/probe.py` | The only probe source: `PROBE` (every field stated), `make_simulator` (persistence 0), `probe_metadata` |
+| `src/orvue_us_inverse/mapping/probe.py` | The only probe source: `PROBE` (every field stated), `FRAME_SHAPE`, `make_simulator` (persistence 0), `simulator_settings`, `probe_metadata` (Prep) |
+| `src/orvue_us_inverse/mapping/config.py` | Settings dataclasses: `GridConfig` (bounds, 0.5 mm voxels, shape, centres), `SweepConfig`, `AcquisitionConfig` (S0) |
+| `src/orvue_us_inverse/mapping/sweep_io.py` | `FrameRecord`, `Sweep` (save / load compressed .npz), `make_metadata` (probe, settings, provenance), `estimate_size_mb` (S0) |
+| `src/orvue_us_inverse/mapping/poses.py` | Pose sources: scripted sweep (S1), mouse (S6), camera (S7); placeholder until S1 |
+| `src/orvue_us_inverse/mapping/acquisition.py` | Distance-triggered frame capture from the simulator; placeholder until S1 |
+| `src/orvue_us_inverse/mapping/recon.py` | Voxel grid and label compounding from oracle labels; placeholder until S2 |
+| `src/orvue_us_inverse/mapping/render.py` | Slice views, surfaces, off-screen 3D snapshots (no PyVista); placeholder until S3 |
+| `src/orvue_us_inverse/mapping/evaluate.py` | Ground-truth voxelisation, metrics, report; placeholder until S4 |
+| `src/orvue_us_inverse/mapping/experiments.py` | Headless parameter studies; placeholder until S5 (S7 adds pose errors) |
+| `src/orvue_us_inverse/mapping/errors.py` | Pose-error injection (jitter, bias, latency, scale); placeholder until S7 |
 | `src/orvue_us_inverse/simulation/__init__.py` | Simulation sub-package (copied) |
 | `src/orvue_us_inverse/simulation/anatomy.py` | Virtual anatomy: tissue table (labels 0-10), tubes / blobs, the 8 cases, `validate` (copied, read-only) |
 | `src/orvue_us_inverse/simulation/bmode.py` | B-mode simulator `BModeSimulator`, simulator window and demo (copied, read-only) |
@@ -132,7 +141,8 @@ output/                  generated at run time, gitignored: captures/, logs/, ex
 | `tests/test_anatomy.py` | Anatomy tests: case geometry and collisions, renderer ground-truth labels (copied) |
 | `tests/test_tracking.py` | Tracking tests on synthetic images: conventions, filters, calibration (copied) |
 | `tests/mapping/__init__.py` | Inverse-mapping tests package |
-| `tests/mapping/test_probe.py` | Probe fields, frame and label shapes 501 x 301, persistence 0 |
+| `tests/mapping/test_probe.py` | Probe fields, frame and label shapes 501 x 301, persistence 0, simulator settings |
+| `tests/mapping/test_sweep_io.py` | Sweep save / load round trip (with and without images), metadata and provenance, size estimate, configs |
 
 ## Rules
 - Absolute imports only (`from orvue_us_inverse.core.example import scaled`); no `sys.path` manipulation.
