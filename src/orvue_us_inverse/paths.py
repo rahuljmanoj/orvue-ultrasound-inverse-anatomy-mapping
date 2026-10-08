@@ -7,7 +7,10 @@ The package lives in src/orvue_us_inverse/ of the repository and is installed in
     config/settings.json           settings (committed)
     config/calibration.json        probe calibration (committed, rewritten by the calibration)
     docs/                          generated PDFs, figures/, images/, print/tracking_board.pdf
-    output/                        generated at run time, not in git: captures/, logs/, export/, viewer3d/, cache/
+    output/                        generated at run time, not in git: captures/, logs/, export/, viewer3d/, cache/,
+                                   sweeps/ (inverse-mapping sweeps), results/ (reconstructions, metrics)
+
+Folders under output/ are created on demand by the code that writes into them.
 """
 import os
 
@@ -33,3 +36,5 @@ LOGS_DIR = os.path.join(OUTPUT_DIR, "logs")
 EXPORT_DIR = os.path.join(OUTPUT_DIR, "export")
 VIEWER3D_OUT_DIR = os.path.join(OUTPUT_DIR, "viewer3d")
 CACHE_DIR = os.path.join(OUTPUT_DIR, "cache")
+SWEEPS_DIR = os.path.join(OUTPUT_DIR, "sweeps")
+RESULTS_DIR = os.path.join(OUTPUT_DIR, "results")
