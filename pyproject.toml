@@ -3,14 +3,15 @@ requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "orvue-template"
+name = "orvue-us-inverse"
 dynamic = ["version"]
-description = "Orvue Surgical Python project template"
+description = "Orvue Surgical Ultrasound Inverse Anatomy Mapping: 3D segmented anatomy from tracked 2D ultrasound frames"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Orvue Surgical A/S" }]
 dependencies = [
     "numpy>=2.0",
+    "orvue-us-sim>=1.0",    # Ultrasound Imaging Simulator, installed editable from ../Ultrasound_Simulator
     "reportlab>=4.0",
 ]
 
@@ -18,16 +19,16 @@ dependencies = [
 test = ["pytest>=8"]
 
 [project.scripts]
-orvue-template = "orvue_template.__main__:main"
+orvue-us-inverse = "orvue_us_inverse.__main__:main"
 
 [tool.setuptools.dynamic]
-version = { attr = "orvue_template.__version__" }
+version = { attr = "orvue_us_inverse.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-orvue_template = ["assets/*.jpg"]
+orvue_us_inverse = ["assets/*.jpg"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

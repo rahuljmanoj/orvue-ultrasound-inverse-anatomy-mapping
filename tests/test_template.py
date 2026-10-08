@@ -3,10 +3,10 @@ import os
 import subprocess
 import sys
 
-from orvue_template import paths
-from orvue_template.__main__ import COMMANDS, MENU
-from orvue_template.core.example import load_settings, scaled
-from orvue_template.reports.manual import build
+from orvue_us_inverse import paths
+from orvue_us_inverse.__main__ import COMMANDS, MENU
+from orvue_us_inverse.core.example import load_settings, scaled
+from orvue_us_inverse.reports.manual import build
 
 
 def test_paths_inside_repository():
@@ -25,7 +25,7 @@ def test_menu_commands_exist():
 
 
 def test_entry_point_menu_exits():
-    out = subprocess.run([sys.executable, "-m", "orvue_template"], stdin=subprocess.DEVNULL, capture_output=True,
+    out = subprocess.run([sys.executable, "-m", "orvue_us_inverse"], stdin=subprocess.DEVNULL, capture_output=True,
                          text=True, cwd=paths.REPO_ROOT, timeout=60)
     assert out.returncode == 0 and "0  Exit" in out.stdout
 
