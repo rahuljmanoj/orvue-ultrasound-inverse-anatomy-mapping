@@ -4,10 +4,10 @@ State of the inverse-mapping project. Updated at the end of every session (plan:
 
 | | |
 |---|---|
-| Repository | rahuljmanoj/orvue-ultrasound-inverse-anatomy-mapping, `main` after the S1 merge (branch `s1`, 2026-10-08) |
+| Repository | rahuljmanoj/orvue-ultrasound-inverse-anatomy-mapping, `main` after the S2 merge (branch `s2`, 2026-10-08) |
 | Simulator code | copied in from rahuljmanoj/orvue-ultrasound-simulator `e789389`; frozen; see `UPSTREAM.md` |
 | Environment | conda env `orvue-robot`, Python 3.11.16 (`C:/Users/rahul/miniconda3/envs/orvue-robot/python.exe`); import check passed (Prep P2) |
-| Last update | 2026-10-08, after S1 |
+| Last update | 2026-10-08, after S2 |
 
 ## Sessions
 
@@ -20,7 +20,8 @@ State of the inverse-mapping project. Updated at the end of every session (plan:
 | Prep P5 baseline | Done | Tests below; frames and timings below; `tracking.markers` and `tracking.tracker` import without a camera (0.09 s) |
 | S0 skeleton, config, sweep format | Done | `mapping/config.py`, `mapping/sweep_io.py` implemented; `poses`, `acquisition`, `recon`, `render`, `evaluate`, `experiments`, `errors` are docstring placeholders; `tests/mapping/test_sweep_io.py` (11 tests) + 2 in `test_probe.py`. Details below |
 | S1 scripted sweep, acquisition, playback | Done | `mapping/poses.py`, `mapping/acquisition.py`, app `mapping/run_scripted.py` (menu 4 `scripted`); `tests/mapping/test_poses_acquisition.py` (16), `test_run_scripted.py` (3). Details below |
-| S2-S7 | Not started | No saved sweeps in the repository (`output/` is gitignored) |
+| S2 reconstruction (oracle labels) | Done | `mapping/recon.py`, script `mapping/reconstruct_sweep.py` (menu 5 `recon`); `tests/mapping/test_recon.py` (9). Details below |
+| S3-S7 | Not started | No saved sweeps in the repository (`output/` is gitignored) |
 
 ## Prep frames and timing (2026-10-08)
 
@@ -94,11 +95,44 @@ S1 deviations from the prompt:
 - Extra: `pose_at(t)`, `lane_at(t)`, `coverage()`, `summary()`; the app's state and drawing are in
   `ScriptedPlayback` (tested without windows). Saved metadata adds `complete`, `planned`, `expected_frames`.
 
+## S2 reconstruction (2026-10-08)
+
+Normal case, oracle labels, exact poses, 0.5 mm voxels (200 x 200 x 100), yaw 0, 20% overlap. "Interior" =
+all 26 neighbours have the same ground-truth label.
+
+| Sweep | Frames | Volume observed | Correct (observed) | Correct (interior) | Insert |
+|---|---|---|---|---|---|
+| Whole region, 0.25 mm | 1604 | 100.0% | 99.23% | 100.000% (3 485 721 voxels) | 10.2 ms/frame |
+| Test block x, y 25-75 mm, 0.25 mm | 402 | 25.5% | 98.48% | 100.000% (845 235) | 9.5 ms/frame |
+| Whole region, 1.0 mm (every 4th) | 401 | 53.5% | 99.18% | 100.000% | |
+| ... + `fill_small_holes(1)` | | 99.5% | 98.81% | 99.998% | fill 0.6 s |
+
+Mismatches are all at tissue boundaries (whole region, 0.25 mm): fat->liver 5615, liver->fat 3867,
+bile->GB wall 2602, fat->GB wall 2416, GB wall->bile 2133, GB wall->fat 1767, vein blood->vein wall 1477,
+GB wall->liver 1181 voxels; none in the interior. After filling the 1 mm sweep, 53 fat->liver and 12
+stone->bile interior voxels are wrong. Slice PNGs checked by eye: reconstruction and ground truth agree, x right,
+y / depth down, liver anterior to the GB.
+
+Timing: insert 9-10 ms/frame (target 15 ms) after vectorising with one `np.unique` per frame (first version
+with `np.add.at`: 27 ms); elevation splat 1 mm (5 planes) 46 ms/frame; ground truth of the whole grid
+(`Anatomy.labels` at 4 M voxel centres) 1.3 s; `fill_small_holes(1)` 0.6 s.
+
+S2 deviations from the prompt:
+- The ground-truth test sweeps the block x, y 25-75 mm (402 frames) to keep the test at ~12 s; the
+  whole-region figures above come from the same code on a 1604-frame sweep (not in the test suite).
+- `ground_truth()` and `interior_mask()` live in `recon.py` (used by the test and the script); S4 builds the
+  evaluation on them.
+- Votes saturate at 65535 instead of wrapping; hits are uint32. `insert_batch()` added (incremental = batch
+  is tested on votes, hits, intensity sums and the result).
+- `reconstruct_sweep` also takes `--max-gap`, `--splat`, `--out`, defaults to the newest sweep (menu step 5
+  `recon`), prints the accuracy against the ground truth, and draws unobserved voxels hatched (liver is grey).
+- Menu: 5 `recon` added; later steps now 6-10 (numbers right-aligned).
+
 ## Tests
 
-`python -m pytest tests` after S1 (2026-10-08): **101 passed, 1 xfailed** in 73 s (S0: 82 passed, 1 xfailed; S1 adds
-16 in `tests/mapping/test_poses_acquisition.py` and 3 in `test_run_scripted.py`; anatomy + tracking 58 passed,
-1 xfailed, as upstream). Slowest mapping tests: the S0 50-frame lane (~4.7 s) and the S1 real-capture lane (~2.4 s). The xfail is the known tracking limit
+`python -m pytest tests` after S2 (2026-10-08): **110 passed, 1 xfailed** in 96 s (S1: 101 passed, 1 xfailed; S2 adds
+9 in `tests/mapping/test_recon.py`; anatomy + tracking 58 passed, 1 xfailed, as upstream). Slowest mapping
+tests: the S2 ground-truth block sweep (~12 s), the S0 50-frame lane (~4.7 s), S2 incremental vs batch (~4.7 s). The xfail is the known tracking limit
 `300mm_tilt15` with ID 0 + ID 5 (face z error ~1.6 mm). `viewer3d/` is copied but untested here.
 
 ## Decisions
@@ -128,5 +162,6 @@ S1 deviations from the prompt:
 
 ## Next step
 
-Watch a full sweep (`python -m orvue_us_inverse scripted` / `--yaw 0 90`), save one with s, then S2
-(`PLAN_inverse_mapping.md`): reconstruction from oracle labels.
+Reconstruct a saved sweep (`python -m orvue_us_inverse recon`) and look at the slice PNGs in `output/results/`;
+then S3 (`PLAN_inverse_mapping.md`): live view of the reconstruction. Open decision before S3: 3D view without
+PyVista / VTK (OpenCV slice views, matplotlib off-screen snapshots, STL export).

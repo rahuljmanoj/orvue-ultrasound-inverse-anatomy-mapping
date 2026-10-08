@@ -13,6 +13,7 @@ Commands (extra options are passed on to the module):
     calibrate   probe calibration                    orvue_us_inverse.tracking.calibrate -> config/calibration.json
     sim         Ultrasound Imaging Simulator         orvue_us_inverse.simulation.bmode   [case] [--track] [--cam-view] [--mouse]
     scripted    scripted sweep, live playback        orvue_us_inverse.mapping.run_scripted [--case X] [--yaw 0 90] [--no-images] ...
+    recon       reconstruct a saved sweep            orvue_us_inverse.mapping.reconstruct_sweep [sweep.npz] [--voxel 0.5] [--fill] -> output/results/
     run         example step                         orvue_us_inverse.core.example
     test        all tests                            pytest tests
     board       tracking board PDF                   orvue_us_inverse.tracking.board     -> docs/print/
@@ -38,6 +39,7 @@ COMMANDS = {
     "calibrate": (["-m", "orvue_us_inverse.tracking.calibrate"], ROOT),
     "sim": (["-m", "orvue_us_inverse.simulation.bmode"], ROOT),
     "scripted": (["-m", "orvue_us_inverse.mapping.run_scripted"], ROOT),
+    "recon": (["-m", "orvue_us_inverse.mapping.reconstruct_sweep"], ROOT),
     "run": (["-m", "orvue_us_inverse.core.example"], ROOT),
     "test": (["-m", "pytest", "tests", "-q"], ROOT),
     "board": (["-m", "orvue_us_inverse.tracking.board"], ROOT),
@@ -52,11 +54,13 @@ MENU = [
     ("SIMULATOR", "3", "Ultrasound Imaging Simulator", "B-mode; m camera / mouse, t camera view", "sim", ["--cam-view"]),
     ("INVERSE MAPPING", "4", "Scripted sweep", "live playback, yaw 0 + 90; s saves the sweep", "scripted",
      ["--yaw", "0", "90"]),
-    ("MAIN", "5", "Run example", "writes output/logs/example.txt", "run", []),
-    ("TOOLS", "6", "Run all tests", "no camera needed", "test", []),
-    ("TOOLS", "7", "Tracking board PDF", "regenerate docs/print/tracking_board.pdf", "board", []),
-    ("TOOLS", "8", "3D anatomy viewer", "every case in the browser (three.js)", "anatomy", []),
-    ("TOOLS", "9", "User manual PDF", "rebuild the manual from the code", "manual", []),
+    ("INVERSE MAPPING", "5", "Reconstruct latest sweep", "label volume + slice PNGs -> output/results/", "recon",
+     []),
+    ("MAIN", "6", "Run example", "writes output/logs/example.txt", "run", []),
+    ("TOOLS", "7", "Run all tests", "no camera needed", "test", []),
+    ("TOOLS", "8", "Tracking board PDF", "regenerate docs/print/tracking_board.pdf", "board", []),
+    ("TOOLS", "9", "3D anatomy viewer", "every case in the browser (three.js)", "anatomy", []),
+    ("TOOLS", "10", "User manual PDF", "rebuild the manual from the code", "manual", []),
 ]
 PROMPT = "Type a number and press Enter: "
 def command_line(command, options):
@@ -84,7 +88,7 @@ def print_menu(running=None):
         if g != group:
             print(f"  {g}")
             group = g
-        print(f"    {num}  {name:<30} {what}")
+        print(f"   {num:>2}  {name:<30} {what}")
     print("  " + "-" * 72)
     print("    0  Exit")
     if running:

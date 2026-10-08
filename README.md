@@ -54,6 +54,8 @@ python -m orvue_us_inverse calibrate    probe calibration -> config/calibration.
 python -m orvue_us_inverse sim [case]   Ultrasound Imaging Simulator ([--track] [--cam-view] [--mouse])
 python -m orvue_us_inverse scripted     scripted sweep, live playback ([--case X] [--yaw 0 90] [--overlap 20]
                                         [--spacing 0.5] [--speed 10] [--no-images]); s saves to output/sweeps/
+python -m orvue_us_inverse recon        reconstruct a sweep ([sweep.npz, default newest] [--voxel 0.5] [--fill])
+                                        -> output/results/recon_<name>.npz + 3 slice PNGs vs ground truth
 python -m orvue_us_inverse run          example step -> output/logs/example.txt
 python -m orvue_us_inverse test         all tests
 python -m orvue_us_inverse board        -> docs/print/tracking_board.pdf
@@ -114,7 +116,8 @@ output/                  generated at run time, gitignored: captures/, logs/, ex
 | `src/orvue_us_inverse/mapping/poses.py` | `ScriptedSweep`: serpentine lanes per yaw, overlap, poses on simulated time, coverage (S1); mouse (S6), camera (S7) to follow |
 | `src/orvue_us_inverse/mapping/acquisition.py` | `Acquirer`: distance / angle-triggered capture of frames into a `Sweep` (S1) |
 | `src/orvue_us_inverse/mapping/run_scripted.py` | App: scripted sweep over the hidden box, top view with lanes and coverage trace, B-mode, save (S1) |
-| `src/orvue_us_inverse/mapping/recon.py` | Voxel grid and label compounding from oracle labels; placeholder until S2 |
+| `src/orvue_us_inverse/mapping/recon.py` | `VoxelGrid`, `pixel_points`, `LabelCompounder` (votes, hits, intensity), `fill_small_holes`, ground-truth helpers (S2) |
+| `src/orvue_us_inverse/mapping/reconstruct_sweep.py` | Script: saved sweep -> label volume and centre slices vs ground truth in `output/results/` (S2) |
 | `src/orvue_us_inverse/mapping/render.py` | Slice views, surfaces, off-screen 3D snapshots (no PyVista); placeholder until S3 |
 | `src/orvue_us_inverse/mapping/evaluate.py` | Ground-truth voxelisation, metrics, report; placeholder until S4 |
 | `src/orvue_us_inverse/mapping/experiments.py` | Headless parameter studies; placeholder until S5 (S7 adds pose errors) |
@@ -148,6 +151,7 @@ output/                  generated at run time, gitignored: captures/, logs/, ex
 | `tests/mapping/test_sweep_io.py` | Sweep save / load round trip (with and without images), metadata and provenance, size estimate, configs |
 | `tests/mapping/test_poses_acquisition.py` | Lane layout and overlap, coverage, triggers over full sweeps, no capture in transitions, save / load |
 | `tests/mapping/test_run_scripted.py` | Scripted-sweep app without windows: stepping, drawing, file name, save; menu step |
+| `tests/mapping/test_recon.py` | `pixel_points` = `plane_points`, accuracy against the ground truth, incremental = batch, hole filling, script |
 
 ## Rules
 - Absolute imports only (`from orvue_us_inverse.core.example import scaled`); no `sys.path` manipulation.
