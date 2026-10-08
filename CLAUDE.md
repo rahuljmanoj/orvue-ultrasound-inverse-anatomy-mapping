@@ -31,8 +31,11 @@ docs/                        generated PDFs, figures/, images/, print/tracking_b
 scripts/rename_project.py    turns the template into a new project
 src/orvue_us_inverse/        the package (below)
 tests/                       test_template.py, test_standalone.py, test_anatomy.py, test_tracking.py,
-                             helpers/synthetic_scene.py
-output/                      run-time output, gitignored: captures/, logs/, export/, viewer3d/, cache/
+                             helpers/synthetic_scene.py, mapping/test_probe.py
+output/                      run-time output, gitignored: captures/, logs/, export/, viewer3d/, cache/, sweeps/,
+                             results/
+PLAN_inverse_mapping.md      session plan for the inverse mapping
+STATUS.md                    project state, updated at the end of every session
 UPSTREAM.md                  origin of the copied simulator code and its change log
 ```
 
@@ -43,8 +46,9 @@ UPSTREAM.md                  origin of the copied simulator code and its change 
   (stdin = DEVNULL, 1 s pause so the D405 is released). New steps: `COMMANDS` + `MENU`.
 - `paths.py`: REPO_ROOT, PACKAGE_DIR, LOGO_PATH, SETTINGS_PATH, CALIBRATION_PATH, DOCS_DIR, FIGURES_DIR,
   IMAGES_DIR, PRINT_DIR, MANUAL_PDF, BOARD_PDF, OUTPUT_DIR, CAPTURES_DIR, LOGS_DIR, EXPORT_DIR, VIEWER3D_OUT_DIR,
-  CACHE_DIR.
+  CACHE_DIR, SWEEPS_DIR, RESULTS_DIR.
 - `core/example.py`: example area module (`load_settings`, `scaled`, `main`).
+- `mapping/probe.py`: `PROBE`, `make_simulator`, `probe_metadata` (see Inverse mapping).
 - Copied from the simulator (`UPSTREAM.md`):
   - `simulation/anatomy.py`: tissue table `TISSUES` (labels 0-10), `Tube` / `Blob`, `Anatomy`, `build_case`,
     `CASES`, `CONNECTED`, `validate()`, `calot_triangle()`. All geometry lives here.
@@ -189,6 +193,26 @@ caterpillar_hump, inflamed_obese (5 mm GB wall, 9 mm fat, impacted Hartmann ston
 - Calot's node (label 10) rests on the anterior side of the cystic artery (absent in short_cystic_duct and
   caterpillar_hump).
 - Structures that touch are listed in `CONNECTED`.
+
+## Inverse mapping
+- Purpose: two separate problems, built and evaluated separately. Reconstruction places each frame's pixels at
+  their 3D positions (pose `T`) and fuses them into a voxel grid; recognition decides what each pixel / voxel is.
+  Recognition starts with oracle labels (the simulator's per-frame ground truth, `labels_image(T)`), so every
+  remaining error is due to reconstruction; classical / learned recognition is measured against that later.
+- Code in the sub-package `src/orvue_us_inverse/mapping/` ("mapping/"); tests in `tests/mapping/`.
+- `mapping/probe.py` is the only probe source: `PROBE` (`LinearProbe` with every field stated: f0 7.5 MHz,
+  30 mm wide, 50 mm deep, 0.1 mm pixels, fnum 3, 2.5 cycles, elevation sigma 0.5 mm, focus 20 mm, Rayleigh 10 mm,
+  c 1.54 mm/us), `make_simulator(case="normal", **kw)` (`BModeSimulator` with `PROBE` and `persistence=0`; passing
+  `persistence` raises `TypeError`), `probe_metadata()` (every field as a dict, stored with each sweep). Never
+  build a `LinearProbe` or `BModeSimulator` directly in `mapping/`.
+- Frames 501 x 301 (depth x lateral). Timing (Prep, 2026-10-08): `render()` ~78 ms/frame, `labels_image()`
+  ~13 ms/frame; oracle-only sweeps use `labels_image()` alone.
+- Data: sweeps in `paths.SWEEPS_DIR` (`output/sweeps`), reconstructions / metrics / reports in
+  `paths.RESULTS_DIR` (`output/results`); both created on demand, gitignored.
+- `PLAN_inverse_mapping.md` is the session plan (one narrow, tested step per session); `STATUS.md` is the state,
+  updated at the end of every session (results, test counts, decisions, known issues, next step).
+- Tests are headless (no windows, no camera, no browser). No PyVista / VTK (blocked by Windows Application
+  Control on this machine): do not import or install them.
 
 ## Rules
 - Read-only (frozen baselines from the simulator; use and import, do not edit without asking):

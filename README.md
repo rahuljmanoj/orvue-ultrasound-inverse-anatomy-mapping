@@ -58,12 +58,13 @@ python -m orvue_us_inverse board        -> docs/print/tracking_board.pdf
 python -m orvue_us_inverse anatomy      3D anatomy viewer in the browser ([--case X] [--export])
 python -m orvue_us_inverse manual       -> docs/Ultrasound Inverse Anatomy Mapping - User Manual.pdf
 ```
-Frames and ground truth in code (always `persistence=0`, so each frame belongs to its own pose):
+Frames and ground truth in code: `mapping/probe.py` is the only probe source; `make_simulator` always uses
+`persistence=0`, so each frame belongs to its own pose:
 ```python
-from orvue_us_inverse.simulation.anatomy import build_case
-from orvue_us_inverse.simulation.bmode import BModeSimulator
-sim = BModeSimulator(build_case("normal"), persistence=0.0)
+from orvue_us_inverse.mapping.probe import make_simulator
+sim = make_simulator("normal")
 img, lab = sim.render(sim.pose_from_xy_yaw(50, 60, 0), return_labels=True)   # 501 x 301 uint8 / int8 labels
+lab = sim.labels_image(sim.pose_from_xy_yaw(50, 60, 0))                      # labels only (oracle), ~6x faster
 ```
 The console script `orvue-us-inverse` does the same as `python -m orvue_us_inverse`.
 
@@ -72,9 +73,11 @@ The console script `orvue-us-inverse` does the same as `python -m orvue_us_inver
 config/                  committed configuration (settings.json, calibration.json)
 docs/                    generated PDFs (manual), figures/, images/, print/ (tracking board)
 scripts/                 helper scripts outside the package
-src/orvue_us_inverse/    the package: core/, reports/ and the copied simulator: simulation/, tracking/, ui/, viewer3d/
-tests/                   pytest tests, helpers/ for synthetic test data
-output/                  generated at run time, gitignored: captures/, logs/, export/, viewer3d/, cache/
+src/orvue_us_inverse/    the package: core/, reports/, mapping/ (inverse mapping) and the copied simulator:
+                         simulation/, tracking/, ui/, viewer3d/
+tests/                   pytest tests, helpers/ for synthetic test data, mapping/ for inverse mapping
+output/                  generated at run time, gitignored: captures/, logs/, export/, viewer3d/, cache/,
+                         sweeps/, results/
 ```
 
 ### Every file
@@ -102,6 +105,8 @@ output/                  generated at run time, gitignored: captures/, logs/, ex
 | `src/orvue_us_inverse/reports/__init__.py` | Reports sub-package |
 | `src/orvue_us_inverse/reports/pdf_template.py` | Orvue Surgical PDF template (`Doc`), used by every generated PDF |
 | `src/orvue_us_inverse/reports/manual.py` | Builds the user manual PDF from the code |
+| `src/orvue_us_inverse/mapping/__init__.py` | Inverse-mapping sub-package (reconstruction, recognition) |
+| `src/orvue_us_inverse/mapping/probe.py` | The only probe source: `PROBE` (every field stated), `make_simulator` (persistence 0), `probe_metadata` |
 | `src/orvue_us_inverse/simulation/__init__.py` | Simulation sub-package (copied) |
 | `src/orvue_us_inverse/simulation/anatomy.py` | Virtual anatomy: tissue table (labels 0-10), tubes / blobs, the 8 cases, `validate` (copied, read-only) |
 | `src/orvue_us_inverse/simulation/bmode.py` | B-mode simulator `BModeSimulator`, simulator window and demo (copied, read-only) |
@@ -126,6 +131,8 @@ output/                  generated at run time, gitignored: captures/, logs/, ex
 | `tests/test_standalone.py` | No file under `src/` or `tests/` refers to the simulator's original package |
 | `tests/test_anatomy.py` | Anatomy tests: case geometry and collisions, renderer ground-truth labels (copied) |
 | `tests/test_tracking.py` | Tracking tests on synthetic images: conventions, filters, calibration (copied) |
+| `tests/mapping/__init__.py` | Inverse-mapping tests package |
+| `tests/mapping/test_probe.py` | Probe fields, frame and label shapes 501 x 301, persistence 0 |
 
 ## Rules
 - Absolute imports only (`from orvue_us_inverse.core.example import scaled`); no `sys.path` manipulation.
