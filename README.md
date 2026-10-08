@@ -52,6 +52,8 @@ python -m orvue_us_inverse              menu (steps in the order of use, 0 = exi
 python -m orvue_us_inverse viewer       check the probe tracking (D405)
 python -m orvue_us_inverse calibrate    probe calibration -> config/calibration.json
 python -m orvue_us_inverse sim [case]   Ultrasound Imaging Simulator ([--track] [--cam-view] [--mouse])
+python -m orvue_us_inverse scripted     scripted sweep, live playback ([--case X] [--yaw 0 90] [--overlap 20]
+                                        [--spacing 0.5] [--speed 10] [--no-images]); s saves to output/sweeps/
 python -m orvue_us_inverse run          example step -> output/logs/example.txt
 python -m orvue_us_inverse test         all tests
 python -m orvue_us_inverse board        -> docs/print/tracking_board.pdf
@@ -109,8 +111,9 @@ output/                  generated at run time, gitignored: captures/, logs/, ex
 | `src/orvue_us_inverse/mapping/probe.py` | The only probe source: `PROBE` (every field stated), `FRAME_SHAPE`, `make_simulator` (persistence 0), `simulator_settings`, `probe_metadata` (Prep) |
 | `src/orvue_us_inverse/mapping/config.py` | Settings dataclasses: `GridConfig` (bounds, 0.5 mm voxels, shape, centres), `SweepConfig`, `AcquisitionConfig` (S0) |
 | `src/orvue_us_inverse/mapping/sweep_io.py` | `FrameRecord`, `Sweep` (save / load compressed .npz), `make_metadata` (probe, settings, provenance), `estimate_size_mb` (S0) |
-| `src/orvue_us_inverse/mapping/poses.py` | Pose sources: scripted sweep (S1), mouse (S6), camera (S7); placeholder until S1 |
-| `src/orvue_us_inverse/mapping/acquisition.py` | Distance-triggered frame capture from the simulator; placeholder until S1 |
+| `src/orvue_us_inverse/mapping/poses.py` | `ScriptedSweep`: serpentine lanes per yaw, overlap, poses on simulated time, coverage (S1); mouse (S6), camera (S7) to follow |
+| `src/orvue_us_inverse/mapping/acquisition.py` | `Acquirer`: distance / angle-triggered capture of frames into a `Sweep` (S1) |
+| `src/orvue_us_inverse/mapping/run_scripted.py` | App: scripted sweep over the hidden box, top view with lanes and coverage trace, B-mode, save (S1) |
 | `src/orvue_us_inverse/mapping/recon.py` | Voxel grid and label compounding from oracle labels; placeholder until S2 |
 | `src/orvue_us_inverse/mapping/render.py` | Slice views, surfaces, off-screen 3D snapshots (no PyVista); placeholder until S3 |
 | `src/orvue_us_inverse/mapping/evaluate.py` | Ground-truth voxelisation, metrics, report; placeholder until S4 |
@@ -143,6 +146,8 @@ output/                  generated at run time, gitignored: captures/, logs/, ex
 | `tests/mapping/__init__.py` | Inverse-mapping tests package |
 | `tests/mapping/test_probe.py` | Probe fields, frame and label shapes 501 x 301, persistence 0, simulator settings |
 | `tests/mapping/test_sweep_io.py` | Sweep save / load round trip (with and without images), metadata and provenance, size estimate, configs |
+| `tests/mapping/test_poses_acquisition.py` | Lane layout and overlap, coverage, triggers over full sweeps, no capture in transitions, save / load |
+| `tests/mapping/test_run_scripted.py` | Scripted-sweep app without windows: stepping, drawing, file name, save; menu step |
 
 ## Rules
 - Absolute imports only (`from orvue_us_inverse.core.example import scaled`); no `sys.path` manipulation.
