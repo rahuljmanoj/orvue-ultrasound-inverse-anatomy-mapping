@@ -87,6 +87,8 @@ output/                  generated at run time, gitignored: captures/, logs/, ex
 | `README.md` | This file: the only README |
 | `CLAUDE.md` | Conventions for Claude Code sessions |
 | `UPSTREAM.md` | Origin of the copied simulator code (repository, commit), old -> new paths, change log |
+| `PLAN_inverse_mapping.md` | Session plan for the inverse mapping (goal, principles, sessions, Claude Code prompts) |
+| `STATUS.md` | Project state, updated at the end of every session (sessions done, evidence, known issues) |
 | `config/settings.json` | Example settings, read by `core/example.py` |
 | `config/calibration.json` | Probe calibration of the current probe build, written by `tracking/calibrate.py` |
 | `docs/.gitkeep` | Keeps `docs/` in git until the first PDF is generated |
