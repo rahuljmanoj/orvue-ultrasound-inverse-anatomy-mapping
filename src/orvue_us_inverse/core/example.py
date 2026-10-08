@@ -1,7 +1,7 @@
 """
-orvue_template.core.example - example module: replace with the project's own areas (one sub-package per area).
+orvue_us_inverse.core.example - example module: replace with the project's own areas (one sub-package per area).
 
-    python -m orvue_template run              (or: python -m orvue_template.core.example [value])
+    python -m orvue_us_inverse run              (or: python -m orvue_us_inverse.core.example [value])
 
 Reads config/settings.json and writes output/logs/example.txt.
 """
@@ -9,7 +9,7 @@ import json
 import os
 import sys
 
-from orvue_template.paths import LOGS_DIR, SETTINGS_PATH
+from orvue_us_inverse.paths import LOGS_DIR, SETTINGS_PATH
 
 
 def load_settings(path=SETTINGS_PATH):

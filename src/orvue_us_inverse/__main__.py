@@ -1,19 +1,19 @@
 """
-orvue_template (python -m orvue_template) - single entry point of the project.
+orvue_us_inverse (python -m orvue_us_inverse) - single entry point of the project.
 
-    python -m orvue_template                      menu (steps listed in the order of use)
-    python -m orvue_template <command> [options]  (or the console script: orvue-template <command> [options])
+    python -m orvue_us_inverse                      menu (steps listed in the order of use)
+    python -m orvue_us_inverse <command> [options]  (or the console script: orvue-us-inverse <command> [options])
 
 Menu: type a step's number and press Enter. The step runs in its own process and the menu stays in this
 console: typing another number closes the running step and starts the new one. 0 exits.
 
 Commands (extra options are passed on to the module):
 
-    run         example step                         orvue_template.core.example
+    run         example step                         orvue_us_inverse.core.example
     test        all tests                            pytest tests
-    manual      rebuild the user manual PDF          orvue_template.reports.manual   -> docs/
+    manual      rebuild the user manual PDF          orvue_us_inverse.reports.manual   -> docs/
 
-Every step runs from the repository folder; the files it reads and writes are fixed in orvue_template.paths.
+Every step runs from the repository folder; the files it reads and writes are fixed in orvue_us_inverse.paths.
 Add a step: one entry in COMMANDS and one row in MENU.
 """
 import os
@@ -22,15 +22,15 @@ import sys
 import threading
 import time
 
-from orvue_template.paths import REPO_ROOT as ROOT
+from orvue_us_inverse.paths import REPO_ROOT as ROOT
 
 RELEASE_S = 1.0                 # pause after stopping a step (e.g. so a camera is free for the next one)
 
 # command -> (argv after the python executable, working directory)
 COMMANDS = {
-    "run": (["-m", "orvue_template.core.example"], ROOT),
+    "run": (["-m", "orvue_us_inverse.core.example"], ROOT),
     "test": (["-m", "pytest", "tests", "-q"], ROOT),
-    "manual": (["-m", "orvue_template.reports.manual"], ROOT),
+    "manual": (["-m", "orvue_us_inverse.reports.manual"], ROOT),
 }
 
 # menu, in the order of use: (group, number, name, what it does, command, options)
@@ -59,7 +59,7 @@ def run(command, options=()):
 # ---------------------------------------------------------------- menu
 def print_menu(running=None):
     line = "=" * 74
-    print(f"\n{line}\n  Orvue Surgical - Project Template\n{line}")
+    print(f"\n{line}\n  Orvue Surgical - Ultrasound Inverse Anatomy Mapping\n{line}")
     group = None
     for g, num, name, what, _, _ in MENU:
         if g != group:
