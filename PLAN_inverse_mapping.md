@@ -271,11 +271,14 @@ SESSION S0: package skeleton, configuration and sweep data format. No visual out
 3. sweep_io.py:
    - FrameRecord: index, t, T_true (4x4), T_measured (4x4), labels (int8, 501 x 301), image (uint8 or None).
    - Sweep: metadata dict + list of FrameRecord; append(frame); save(path) as compressed .npz (stack arrays;
-     metadata as JSON string, including case name, probe width/depth/pixel size from mapping/probe.py, simulator
-     settings, sweep config, timestamp); Sweep.load(path).
+     metadata as JSON string, including case name, simulator settings, sweep config, timestamp); Sweep.load(path).
+   - Metadata also stores the probe fields from probe_metadata() and provenance: this repository's git commit
+     (git rev-parse HEAD; None if git is not available) and the simulator source commit e789389 from UPSTREAM.md.
    - estimate_size_mb(n_frames, store_images) helper.
 4. tests/mapping/test_sweep_io.py: save/load round-trip equality (with and without images), metadata
-   preserved, size estimate within 30% of the actual file for a 50-frame synthetic sweep.
+   preserved (including probe fields and provenance), size estimate within 30% of the actual file for a
+   50-frame sweep. Use 50 real frames from make_simulator("normal") along a short lane (seed sim._rng), not
+   random arrays: labels compress far better than speckle, so random data would calibrate the estimate wrong.
 5. README.md "Every file" table and the CLAUDE.md inverse-mapping section: the new modules with their sessions
    (no separate README).
 ```
