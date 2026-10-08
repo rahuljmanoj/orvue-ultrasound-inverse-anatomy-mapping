@@ -9,9 +9,14 @@ console: typing another number closes the running step and starts the new one. 0
 
 Commands (extra options are passed on to the module):
 
+    viewer      check the probe tracking (D405)      orvue_us_inverse.tracking.viewer
+    calibrate   probe calibration                    orvue_us_inverse.tracking.calibrate -> config/calibration.json
+    sim         Ultrasound Imaging Simulator         orvue_us_inverse.simulation.bmode   [case] [--track] [--cam-view] [--mouse]
     run         example step                         orvue_us_inverse.core.example
     test        all tests                            pytest tests
-    manual      rebuild the user manual PDF          orvue_us_inverse.reports.manual   -> docs/
+    board       tracking board PDF                   orvue_us_inverse.tracking.board     -> docs/print/
+    anatomy     3D anatomy viewer (browser)          orvue_us_inverse.viewer3d           [--case X] [--export]
+    manual      rebuild the user manual PDF          orvue_us_inverse.reports.manual     -> docs/
 
 Every step runs from the repository folder; the files it reads and writes are fixed in orvue_us_inverse.paths.
 Add a step: one entry in COMMANDS and one row in MENU.
@@ -28,16 +33,26 @@ RELEASE_S = 1.0                 # pause after stopping a step (e.g. so a camera 
 
 # command -> (argv after the python executable, working directory)
 COMMANDS = {
+    "viewer": (["-m", "orvue_us_inverse.tracking.viewer"], ROOT),
+    "calibrate": (["-m", "orvue_us_inverse.tracking.calibrate"], ROOT),
+    "sim": (["-m", "orvue_us_inverse.simulation.bmode"], ROOT),
     "run": (["-m", "orvue_us_inverse.core.example"], ROOT),
     "test": (["-m", "pytest", "tests", "-q"], ROOT),
+    "board": (["-m", "orvue_us_inverse.tracking.board"], ROOT),
+    "anatomy": (["-m", "orvue_us_inverse.viewer3d"], ROOT),
     "manual": (["-m", "orvue_us_inverse.reports.manual"], ROOT),
 }
 
 # menu, in the order of use: (group, number, name, what it does, command, options)
 MENU = [
-    ("MAIN", "1", "Run example", "writes output/logs/example.txt", "run", []),
-    ("TOOLS", "2", "Run all tests", "pytest tests", "test", []),
-    ("TOOLS", "3", "User manual PDF", "rebuild the manual from the code", "manual", []),
+    ("CAMERA TRACKING", "1", "Check tracking", "camera view, phantom map, readouts", "viewer", []),
+    ("CAMERA TRACKING", "2", "Calibrate probe", "yaw and face position", "calibrate", []),
+    ("SIMULATOR", "3", "Ultrasound Imaging Simulator", "B-mode; m camera / mouse, t camera view", "sim", ["--cam-view"]),
+    ("MAIN", "4", "Run example", "writes output/logs/example.txt", "run", []),
+    ("TOOLS", "5", "Run all tests", "no camera needed", "test", []),
+    ("TOOLS", "6", "Tracking board PDF", "regenerate docs/print/tracking_board.pdf", "board", []),
+    ("TOOLS", "7", "3D anatomy viewer", "every case in the browser (three.js)", "anatomy", []),
+    ("TOOLS", "8", "User manual PDF", "rebuild the manual from the code", "manual", []),
 ]
 PROMPT = "Type a number and press Enter: "
 def command_line(command, options):

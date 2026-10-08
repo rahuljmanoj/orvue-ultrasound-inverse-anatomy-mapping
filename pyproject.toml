@@ -11,11 +11,15 @@ requires-python = ">=3.10"
 authors = [{ name = "Orvue Surgical A/S" }]
 dependencies = [
     "numpy>=2.0",
-    "orvue-us-sim>=1.0",    # Ultrasound Imaging Simulator, installed editable from ../Ultrasound_Simulator
+    "scipy>=1.13",
+    "opencv-contrib-python>=4.10",
+    "matplotlib>=3.8",
+    "scikit-image>=0.24",
     "reportlab>=4.0",
 ]
 
 [project.optional-dependencies]
+camera = ["pyrealsense2>=2.55"]
 test = ["pytest>=8"]
 
 [project.scripts]
@@ -28,7 +32,7 @@ version = { attr = "orvue_us_inverse.__version__" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-orvue_us_inverse = ["assets/*.jpg"]
+orvue_us_inverse = ["assets/*.jpg", "viewer3d/template.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
