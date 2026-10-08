@@ -1,0 +1,19 @@
+# PyCharm
+.idea/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Generated at run time (captures, logs, mesh exports, 3D viewer page and browser profile, mesh cache)
+output/
+
+# Packaging
+*.egg-info/
+build/
+dist/

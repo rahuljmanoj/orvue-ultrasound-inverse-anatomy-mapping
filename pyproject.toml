@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "orvue-template"
+dynamic = ["version"]
+description = "Orvue Surgical Python project template"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Orvue Surgical A/S" }]
+dependencies = [
+    "numpy>=2.0",
+    "reportlab>=4.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.scripts]
+orvue-template = "orvue_template.__main__:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "orvue_template.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+orvue_template = ["assets/*.jpg"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]
+addopts = "-q"
