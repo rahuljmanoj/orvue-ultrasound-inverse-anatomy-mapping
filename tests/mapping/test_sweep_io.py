@@ -128,7 +128,7 @@ def test_grid_config():
 def test_sweep_config():
     s = SweepConfig()
     assert (s.yaw_list_deg, s.overlap_pct, s.frame_spacing_mm, s.angle_trigger_deg, s.speed_mm_s, s.serpentine) \
-        == ([0.0], 20.0, 0.5, 1.0, 10.0, True)
+        == ([0.0], 20.0, 0.25, 1.0, 10.0, True)
     assert (s.region_x_mm, s.region_y_mm) == ((0.0, 100.0), (0.0, 100.0))
     assert (s.probe_width_mm, s.probe_depth_mm) == (30.0, 50.0)
     assert AcquisitionConfig().store_images is True

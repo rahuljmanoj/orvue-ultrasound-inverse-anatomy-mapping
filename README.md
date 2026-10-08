@@ -53,7 +53,7 @@ python -m orvue_us_inverse viewer       check the probe tracking (D405)
 python -m orvue_us_inverse calibrate    probe calibration -> config/calibration.json
 python -m orvue_us_inverse sim [case]   Ultrasound Imaging Simulator ([--track] [--cam-view] [--mouse])
 python -m orvue_us_inverse scripted     scripted sweep with the reconstruction growing live ([--case X]
-                                        [--yaw 0 90] [--overlap 20] [--spacing 0.5] [--speed 10] [--no-images]
+                                        [--yaw 0 90] [--overlap 20] [--spacing 0.25] [--speed 10] [--no-images]
                                         [--live3d]); s saves to output/sweeps/, 3 snapshot + STL, b browser 3D,
                                         c complete: evaluate -> output/results/<case>_<time>/ report
 python -m orvue_us_inverse recon        reconstruct a sweep ([sweep.npz, default newest] [--voxel 0.5] [--fill])
