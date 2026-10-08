@@ -54,9 +54,12 @@ python -m orvue_us_inverse calibrate    probe calibration -> config/calibration.
 python -m orvue_us_inverse sim [case]   Ultrasound Imaging Simulator ([--track] [--cam-view] [--mouse])
 python -m orvue_us_inverse scripted     scripted sweep with the reconstruction growing live ([--case X]
                                         [--yaw 0 90] [--overlap 20] [--spacing 0.5] [--speed 10] [--no-images]
-                                        [--live3d]); s saves to output/sweeps/, 3 snapshot + STL, b browser 3D
+                                        [--live3d]); s saves to output/sweeps/, 3 snapshot + STL, b browser 3D,
+                                        c complete: evaluate -> output/results/<case>_<time>/ report
 python -m orvue_us_inverse recon        reconstruct a sweep ([sweep.npz, default newest] [--voxel 0.5] [--fill])
                                         -> output/results/recon_<name>.npz + 3 slice PNGs vs ground truth
+python -m orvue_us_inverse evaluate     evaluate a sweep against the ground truth ([sweep.npz] [--voxel 0.5]
+                                        [--fill]) -> output/results/<case>_<time>/ (report.md, .json, figures)
 python -m orvue_us_inverse run          example step -> output/logs/example.txt
 python -m orvue_us_inverse test         all tests
 python -m orvue_us_inverse board        -> docs/print/tracking_board.pdf
@@ -121,7 +124,8 @@ output/                  generated at run time, gitignored: captures/, logs/, ex
 | `src/orvue_us_inverse/mapping/reconstruct_sweep.py` | Script: saved sweep -> label volume and centre slices vs ground truth in `output/results/` (S2) |
 | `src/orvue_us_inverse/mapping/render.py` | `SliceView` (3 slices through a crosshair), `surface_meshes`, `snapshot_3d` (matplotlib), `export_stl`, browser 3D page (S3) |
 | `src/orvue_us_inverse/mapping/live3d.py` | Optional live PyVista 3D window of the reconstruction (`pip install -e .[view3d]`) (S3) |
-| `src/orvue_us_inverse/mapping/evaluate.py` | Ground-truth voxelisation, metrics, report; placeholder until S4 |
+| `src/orvue_us_inverse/mapping/evaluate.py` | Ground-truth instance masks, class metrics (Dice, IoU, precision, recall, MSD, HD95), structure detection, bile topology, report (S4) |
+| `src/orvue_us_inverse/mapping/evaluate_sweep.py` | Script: saved sweep -> reconstruction -> evaluation report in `output/results/<case>_<time>/` (S4) |
 | `src/orvue_us_inverse/mapping/experiments.py` | Headless parameter studies; placeholder until S5 (S7 adds pose errors) |
 | `src/orvue_us_inverse/mapping/errors.py` | Pose-error injection (jitter, bias, latency, scale); placeholder until S7 |
 | `src/orvue_us_inverse/simulation/__init__.py` | Simulation sub-package (copied) |
@@ -153,6 +157,7 @@ output/                  generated at run time, gitignored: captures/, logs/, ex
 | `tests/mapping/test_sweep_io.py` | Sweep save / load round trip (with and without images), metadata and provenance, size estimate, configs |
 | `tests/mapping/test_poses_acquisition.py` | Lane layout and overlap, coverage, triggers over full sweeps, no capture in transitions, save / load |
 | `tests/mapping/test_run_scripted.py` | Scripted-sweep app without windows: stepping, drawing, file name, save; menu step |
+| `tests/mapping/test_evaluate.py` | Perfect reconstruction, one-voxel shift, cut cystic duct, not covered vs missed, report files, script, app complete |
 | `tests/mapping/test_render.py` | Slice shapes / colours / idempotence, meshes inside the grid, timing, snapshot, STL, browser page, app outputs, PyVista off-screen |
 | `tests/mapping/test_recon.py` | `pixel_points` = `plane_points`, accuracy against the ground truth, incremental = batch, hole filling, script |
 

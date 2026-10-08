@@ -59,6 +59,7 @@ GAP = 12
 CAPTION_H = 22
 CROSS_BGR = (0, 200, 255)          # amber (ui.AMBER)
 GT_BGR = (255, 255, 255)
+ERROR_BGR = (255, 0, 255)          # magenta: reconstructed label differs from the ground truth
 
 
 def colour_slice(lab2d: np.ndarray) -> np.ndarray:
@@ -88,6 +89,7 @@ class SliceView:
         self.cross = list(crosshair) if crosshair is not None else [nx // 2, ny // 2, nz // 2]
         self.gt = gt
         self.show_gt = gt is not None
+        self.errors = False                  # error colouring (needs gt): wrong voxels magenta, correct ones dimmed
         s = self.s
         # panel rectangles (x, y, w, h) in the image
         top = CAPTION_H
@@ -131,11 +133,12 @@ class SliceView:
         return {"xy": xy.T, "xz": xz.T, "yz": yz.T}
 
     def update(self, src) -> np.ndarray:
-        """The slice image for the current crosshair (pure function of src, crosshair and gt setting)."""
+        """The slice image for the current crosshair (pure function of src, crosshair, gt and error settings)."""
         h, w = self.size
         img = np.full((h, w, 3), ui.BG, np.uint8)
         sl = self.slices(src)
         gsl = self.slices(self.gt) if (self.show_gt and self.gt is not None) else None
+        esl = self.slices(self.gt) if (self.errors and self.gt is not None) else None
         s = self.s
         ix, iy, iz = self.cross
         c = self.crosshair_mm()
@@ -144,7 +147,13 @@ class SliceView:
                     "yz": f"x = {c[0]:.2f} mm (y right, depth down)"}
         cross_px = {"xy": (ix, iy), "xz": (ix, iz), "yz": (iy, iz)}
         for name, (rx, ry, rw, rh) in self.rect.items():
-            pane = np.repeat(np.repeat(colour_slice(sl[name]), s, 0), s, 1)
+            col = colour_slice(sl[name])
+            if esl is not None:
+                obs = sl[name] >= 0
+                wrong = obs & (sl[name] != esl[name])
+                col[obs & ~wrong] = (0.45 * col[obs & ~wrong]).astype(np.uint8)
+                col[wrong] = ERROR_BGR
+            pane = np.repeat(np.repeat(col, s, 0), s, 1)
             if gsl is not None:
                 e = np.repeat(np.repeat(_edges(gsl[name]), s, 0), s, 1)
                 pane[e] = (0.35 * pane[e] + 0.65 * np.array(GT_BGR)).astype(np.uint8)
@@ -195,9 +204,11 @@ def surface_meshes(labels: np.ndarray, grid: VoxelGrid, groups: dict | None = No
 
 
 def snapshot_3d(meshes: dict, path: str, gt: dict | None = None, title: str = "", region=(100.0, 100.0, 50.0),
-                size_px=(1200, 900)) -> str:
+                size_px=(1200, 900), face_values: dict | None = None, vmax: float = 2.0,
+                value_label: str = "") -> str:
     """Off-screen PNG (matplotlib Agg): isometric, equal axes, x right, y towards the viewer (down), depth downwards
-    with the scanning surface z = 0 on top. gt meshes are drawn translucent."""
+    with the scanning surface z = 0 on top. gt meshes are drawn translucent. face_values {group: per-face values}
+    colours those groups' faces on a 0..vmax scale (plasma) with a colour bar instead of the group colour."""
     import matplotlib
     matplotlib.use("Agg", force=False)
     import matplotlib.pyplot as plt
@@ -209,14 +220,21 @@ def snapshot_3d(meshes: dict, path: str, gt: dict | None = None, title: str = ""
     order = [n for n in GROUPS if n != "bile"] + ["bile"]          # bile last (translucent, drawn over its contents)
     meshes = {n: meshes[n] for n in order if n in meshes} | {n: m for n, m in meshes.items() if n not in GROUPS}
     light = matplotlib.colors.LightSource(azdeg=225, altdeg=45)
-    for set_, base_alpha in ((gt or {}, 0.12), (meshes, 1.0)):
+    cmap = matplotlib.colormaps["plasma"]
+    for set_, base_alpha, valued in ((gt or {}, 0.12, False), (meshes, 1.0, True)):
         for name, (v, f) in set_.items():
             if len(f) == 0:
                 continue
             alpha = base_alpha * (SNAPSHOT_BILE_ALPHA if name == "bile" else 1.0)   # stones show inside the GB
-            pc = Poly3DCollection(v[f], facecolors=colours.get(name, "#B4B2A9"), alpha=alpha, linewidths=0,
-                                  shade=True, lightsource=light)
+            if valued and face_values is not None and name in face_values:
+                fc = cmap(np.clip(np.nan_to_num(face_values[name]) / vmax, 0, 1))
+            else:
+                fc = colours.get(name, "#B4B2A9")
+            pc = Poly3DCollection(v[f], facecolors=fc, alpha=alpha, linewidths=0, shade=True, lightsource=light)
             ax.add_collection3d(pc)
+    if face_values is not None:
+        sm = matplotlib.cm.ScalarMappable(cmap=cmap, norm=matplotlib.colors.Normalize(0, vmax))
+        fig.colorbar(sm, ax=ax, shrink=0.55, pad=0.08, label=value_label)
     rx, ry, rz = region
     ax.set_xlim(0, rx)
     ax.set_ylim(ry, 0)                 # y grows towards the viewer (down the print)

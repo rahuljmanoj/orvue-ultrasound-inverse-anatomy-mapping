@@ -1,6 +1,6 @@
 """
 orvue_us_inverse.mapping.run_scripted - live playback of a scripted sweep over the hidden 100 x 100 mm box, with the
-reconstruction growing as frames are captured (S1, S3).
+reconstruction growing as frames are captured and the evaluation on "complete" (S1, S3, S4).
 
     python -m orvue_us_inverse.mapping.run_scripted [--case normal] [--yaw 0 90] [--overlap 20] [--spacing 0.5]
                                                      [--speed 10] [--no-images] [--live3d]
@@ -15,19 +15,23 @@ Windows:
   "Scripted sweep - B-mode"  the latest captured frame, 501 x 301 (oracle labels in colour with --no-images).
   "Scripted sweep - slices"  three orthogonal slices of the reconstruction through a crosshair (render.SliceView),
                              refreshed every 0.5 s; click, arrow keys (x, y) and PgUp / PgDn or [ / ] (depth) move it;
-                             g adds the ground-truth contours.
+                             g adds the ground-truth contours; after c, wrong voxels are magenta (e toggles).
   "Reconstruction 3D"        optional live PyVista window (--live3d or key p), surfaces refreshed every 3 s.
 
 Keys: space pause / resume, + / - playback speed, v top view, r restart, s save the sweep
 (output/sweeps/<case>_<settings>_<time>.npz), 3 3D snapshot PNG (output/results/) + STL per structure
 (output/export/recon_<case>_<time>/), b browser 3D view (output/viewer3d/recon_<case>.html, three.js),
-p live 3D window on / off, g ground-truth contours, q / Esc quit.
+p live 3D window on / off, g ground-truth contours, c complete: stop, fill small holes, evaluate against the ground
+truth (mapping.evaluate), print the summary, write the report to output/results/<case>_<time>/ (report.json,
+report.md, overlay_3d.png, structures.png, slices_errors.png) and open that folder; e error colouring on / off,
+q / Esc quit.
 
 The sweep runs on simulated time (poses every 0.05 mm, mapping.poses.ScriptedSweep); frames are captured by
 distance (mapping.acquisition.Acquirer) and inserted into the reconstruction (mapping.recon.LabelCompounder) as they
 arrive. Rendering is synchronous, so when it is slower than real time the playback slows down; no frame is dropped.
 """
 import argparse
+import dataclasses
 import os
 import time
 import webbrowser
@@ -39,7 +43,8 @@ from orvue_us_inverse.mapping.acquisition import Acquirer
 from orvue_us_inverse.mapping.config import AcquisitionConfig, GridConfig, SweepConfig
 from orvue_us_inverse.mapping.poses import STEP_MM, ScriptedSweep
 from orvue_us_inverse.mapping.probe import FRAME_SHAPE, PROBE, make_simulator, probe_metadata
-from orvue_us_inverse.mapping.recon import LabelCompounder, VoxelGrid, ground_truth
+from orvue_us_inverse.mapping.evaluate import evaluate, instance_masks, summary_table, write_report
+from orvue_us_inverse.mapping.recon import LabelCompounder, VoxelGrid, fill_small_holes, ground_truth
 from orvue_us_inverse.mapping.render import (SliceView, export_stl, snapshot_3d, surface_meshes,
                                              write_browser_view)
 from orvue_us_inverse.paths import EXPORT_DIR, RESULTS_DIR, SWEEPS_DIR, VIEWER3D_OUT_DIR
@@ -89,6 +94,7 @@ class ScriptedPlayback:
         self._revealed_img = None
         self._gt = None
         self._gt_meshes = None
+        self._instances = None
         self.view = 0                                # index into VIEWS
         self.play = 1.0
         self.paused = False
@@ -107,6 +113,10 @@ class ScriptedPlayback:
         self.wall_rate = None                        # simulated s per wall s, smoothed
         self._coverage = (-1, None)                  # (frames when computed, image)
         self.observed_pct = 0.0
+        self.completed = False                       # after complete(): acquisition stopped, evaluation done
+        self.final_labels = None                     # hole-filled label volume of the completed sweep
+        self.evaluation = None
+        self.slice_view.errors = False
 
     @property
     def done(self) -> bool:
@@ -119,6 +129,8 @@ class ScriptedPlayback:
     def advance(self, sim_dt: float) -> int:
         """Feed the samples up to t + sim_dt, stopping after the first captured frame (so every frame is shown);
         a captured frame is inserted into the reconstruction. Returns the number of frames captured (0 or 1)."""
+        if self.completed:
+            return 0
         target = self.t + sim_dt
         while not self.done and self.samples[self.i].t <= target + 1e-12:
             s = self.samples[self.i]
@@ -149,6 +161,34 @@ class ScriptedPlayback:
         if self._gt_meshes is None:
             self._gt_meshes = surface_meshes(self.gt_volume(), self.grid)
         return self._gt_meshes
+
+    def complete(self, results: str = RESULTS_DIR, fill: bool = True, max_gap: int = 1) -> tuple[str, str]:
+        """Stop acquisition, fill small holes, evaluate against the ground truth and write the report folder
+        (with the error-coloured slices); the slice view then shows the errors. Returns (folder, summary table)."""
+        self.completed = True
+        raw = self.comp.result()
+        labels = fill_small_holes(raw, max_gap) if fill else raw
+        if self._instances is None:
+            self._instances = instance_masks(self.sim.an, self.grid)
+        extra = dict(frames=len(self.acq.sweep), expected_frames=self.expected, sweep_finished=self.done,
+                     sweep_config=dataclasses.asdict(self.cfg), fill=fill, max_gap=max_gap if fill else 0,
+                     observed_fraction_before_fill=float((raw >= 0).mean()))
+        self.evaluation = evaluate(labels, self.sim.an, self.grid, gt=self.gt_volume(), instances=self._instances,
+                                   case=self.case, extra=extra)
+        self.final_labels = labels
+        v = self.slice_view
+        v.gt, v.errors = self.gt_volume(), True
+        folder = os.path.join(results, f"{self.case}_{time.strftime('%Y%m%d-%H%M%S')}")
+        os.makedirs(folder, exist_ok=True)
+        cv2.imwrite(os.path.join(folder, "slices_errors.png"), v.update(labels))
+        write_report(self.evaluation, folder,
+                     title=f"{self.case}: {len(self.acq.sweep)} frames, yaw {self.cfg.yaw_list_deg}, overlap "
+                           f"{self.cfg.overlap_pct:g}%, spacing {self.cfg.frame_spacing_mm:g} mm")
+        r = self.evaluation.report
+        self.message = (f"complete: {100 * r['accuracy_observed']:.1f}% of observed voxels correct, "
+                        f"{r['counts']['detected']} structures detected, topology {r['topology']['status']}; "
+                        f"report in output/results/{os.path.basename(folder)}")
+        return folder, summary_table(r)
 
     def toggle_gt_contours(self) -> None:
         v = self.slice_view
@@ -259,7 +299,7 @@ class ScriptedPlayback:
         else:
             orient, lane_s = "lift-off", "---"
         ov = ", ".join(f"{self.plan.overlap_pct[y]:.1f}" for y in yaws)
-        state = "done" if self.done else ("paused" if self.paused else "running")
+        state = "complete" if self.completed else ("done" if self.done else ("paused" if self.paused else "running"))
         rate = "---" if self.wall_rate is None else f"{self.wall_rate:.2f}x real time"
         return [("case", self.case), ("orientation", orient), ("lane", lane_s),
                 ("frames", f"{len(self.acq.sweep)} / {self.expected}"),
@@ -286,8 +326,8 @@ class ScriptedPlayback:
             y += 18
         ui.key_bar(img, [("space", "pause"), ("+/-", "speed"), ("v", "top view"), ("r", "restart"),
                          ("s", "save sweep"), ("q", "quit")], h - KEYS_H)
-        ui.key_bar(img, [("3", "3D snapshot + STL"), ("b", "browser 3D"), ("p", "live 3D"), ("g", "truth contours")],
-                   h - KEYS_H // 2)
+        ui.key_bar(img, [("c", "complete"), ("3", "3D + STL"), ("b", "browser 3D"), ("p", "live 3D"),
+                         ("g", "truth"), ("e", "errors")], h - KEYS_H // 2)
         return img
 
     # ---- drawing: B-mode and slices
@@ -306,13 +346,14 @@ class ScriptedPlayback:
     def slice_image(self) -> np.ndarray:
         """Slices of the current reconstruction (only the three slices are computed) and a help strip."""
         self.observed_pct = 100.0 * np.count_nonzero(self.comp.hits) / self.grid.n_voxels
-        img = self.slice_view.update(self.comp)
+        img = self.slice_view.update(self.final_labels if self.completed else self.comp)
         out = np.full((img.shape[0] + HELP_H, img.shape[1], 3), ui.BG, np.uint8)
         out[:img.shape[0]] = img
         c = self.slice_view.crosshair_mm()
         gt = "on" if (self.slice_view.show_gt and self.slice_view.gt is not None) else "off"
+        err = "   e: errors magenta (on)" if self.slice_view.errors else ("   e: errors (off)" if self.completed else "")
         ui.text(out, f"crosshair ({c[0]:.1f}, {c[1]:.1f}, {c[2]:.1f}) mm   click / arrows / PgUp PgDn or [ ]: move   "
-                     f"g: truth contours ({gt})", (4, img.shape[0] + 18), ui.GREY, 0.42)
+                     f"g: truth contours ({gt}){err}", (4, img.shape[0] + 18), ui.GREY, 0.42)
         return out
 
 
@@ -374,7 +415,8 @@ def main(argv=None) -> int:
             app.advance(min(elapsed, MAX_WALL_STEP_S) * app.play)
             sim_dt = app.t - t0
             if app.done:
-                app.message = f"sweep complete: {len(app.acq.sweep)} frames. s saves, 3 / b show the 3D result."
+                app.message = (f"sweep finished: {len(app.acq.sweep)} frames. c evaluates, s saves, 3 / b show "
+                               "the 3D result.")
         else:
             sim_dt = None
         if dirty["slices"] or now - last_slices >= SLICE_PERIOD_S:
@@ -428,6 +470,19 @@ def main(argv=None) -> int:
             app.message = "restarted"
         elif key == ord("s"):
             print(f"[run_scripted] {app.save()}", flush=True)
+        elif key == ord("c") and not app.completed:
+            app.message = "complete: filling holes and evaluating against the ground truth ..."
+            cv2.imshow(WIN_TOP, app.compose())
+            cv2.waitKey(1)
+            folder, table = app.complete()
+            print(table, flush=True)
+            print(f"[run_scripted] report: {folder}", flush=True)
+            dirty["slices"] = True
+            if hasattr(os, "startfile"):
+                os.startfile(folder)                     # open the report folder (Windows)
+        elif key == ord("e") and app.slice_view.gt is not None:
+            app.slice_view.errors = not app.slice_view.errors
+            dirty["slices"] = True
         elif key == ord("3"):
             png, stls = app.export_3d()
             print(f"[run_scripted] {png}\n[run_scripted] " + "\n[run_scripted] ".join(stls), flush=True)

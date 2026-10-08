@@ -4,10 +4,10 @@ State of the inverse-mapping project. Updated at the end of every session (plan:
 
 | | |
 |---|---|
-| Repository | rahuljmanoj/orvue-ultrasound-inverse-anatomy-mapping, `main` after the S3 merge (branch `s3`, 2026-10-08) |
+| Repository | rahuljmanoj/orvue-ultrasound-inverse-anatomy-mapping, `main` after the S4 merge (branch `s4`, 2026-10-08) |
 | Simulator code | copied in from rahuljmanoj/orvue-ultrasound-simulator `e789389`; frozen; see `UPSTREAM.md` |
 | Environment | conda env `orvue-robot`, Python 3.11.16 (`C:/Users/rahul/miniconda3/envs/orvue-robot/python.exe`); import check passed (Prep P2) |
-| Last update | 2026-10-08, after S3 |
+| Last update | 2026-10-08, after S4 |
 
 ## Sessions
 
@@ -22,7 +22,8 @@ State of the inverse-mapping project. Updated at the end of every session (plan:
 | S1 scripted sweep, acquisition, playback | Done | `mapping/poses.py`, `mapping/acquisition.py`, app `mapping/run_scripted.py` (menu 4 `scripted`); `tests/mapping/test_poses_acquisition.py` (16), `test_run_scripted.py` (3). Details below |
 | S2 reconstruction (oracle labels) | Done | `mapping/recon.py`, script `mapping/reconstruct_sweep.py` (menu 5 `recon`); `tests/mapping/test_recon.py` (9). Details below |
 | S3 live view of the reconstruction | Done | `mapping/render.py`, `mapping/live3d.py` (optional PyVista), `run_scripted.py` (live reconstruction, slices, coverage, 3D outputs); `tests/mapping/test_render.py` (8). Details below |
-| S4-S7 | Not started | No saved sweeps in the repository (`output/` is gitignored) |
+| S4 evaluation and "complete" | Done | `mapping/evaluate.py`, script `mapping/evaluate_sweep.py` (menu 6 `evaluate`), key c in `run_scripted.py`; `tests/mapping/test_evaluate.py` (10). Details below |
+| S5-S7 | Not started | Sweeps and reports in `output/` (gitignored) |
 
 ## Prep frames and timing (2026-10-08)
 
@@ -155,10 +156,75 @@ S3 deviations from the prompt:
   rendered 1604-frame sweep.
 - pyvista 0.49.0 / vtk 9.7.1 added to `requirements.txt` and as extra `view3d` (already installed).
 
+## S4 evaluation (2026-10-08)
+
+Full scripted sweeps of the normal case (oracle labels only; B-mode not needed for the evaluation), 20% overlap,
+0.5 mm spacing, 0.5 mm voxels, through the app's "complete" path (`ScriptedPlayback.complete`, hole filling
+max gap 1). Sweeps `output/sweeps/normal_yaw0_ov20_sp0.5_v10_labels_20261008-154537.npz` and
+`normal_yaw0-90_..._20261008-154616.npz`; reports `output/results/normal_20261008-154542/` and
+`normal_20261008-154621/`.
+
+| Sweep | Frames | Observed (before fill) | Correct | Detected / missed / not covered | Topology GB - CBD |
+|---|---|---|---|---|---|
+| yaw 0 | 804 | 100.0% (100.0%) | 99.0% | 14 / 0 / 0 | ok (connected) |
+| yaw 0 + 90 | 1608 | 100.0% (100.0%) | 98.9% | 14 / 0 / 0 | ok (connected) |
+
+| Class | Dice yaw 0 | Dice yaw 0 + 90 | MSD yaw 0 / 0 + 90 (mm) | HD95 (mm) |
+|---|---|---|---|---|
+| bile (3) | 0.985 | 0.983 | 0.16 / 0.18 | 0.50 |
+| arterial blood (7) | 0.928 | 0.910 | 0.12 / 0.16 | 0.50 |
+| venous blood (9) | 0.982 | 0.975 | 0.11 / 0.15 | 0.50 |
+| stone (4) | 0.952 | 0.953 | 0.17 / 0.17 | 0.50 |
+| lymph node (10) | 0.923 | 0.927 | 0.17 / 0.16 | 0.50 |
+| GB wall (2) | 0.896 | 0.894 | 0.18 / 0.18 | 0.50 |
+| duct wall (5) | 0.848 | 0.766 | 0.08 / 0.12 | 0.50 |
+| artery wall (6) | 0.789 | 0.743 | 0.11 / 0.13 | 0.50 |
+| vein wall (8) | 0.736 | 0.645 | 0.13 / 0.18 | 0.50 |
+
+| Structure | Recall yaw 0 | Recall yaw 0 + 90 | Status (both) |
+|---|---|---|---|
+| gallbladder | 98.5% | 98.6% | detected |
+| cystic_duct | 94.5% | 95.0% | detected |
+| chd_cbd | 96.4% | 94.6% | detected |
+| proper_hepatic_artery | 96.1% | 90.9% | detected |
+| left_hepatic_artery | 91.1% | 89.8% | detected |
+| right_hepatic_artery | 91.8% | 92.6% | detected |
+| cystic_artery | 82.7% | 82.7% | detected |
+| portal_vein | 98.3% | 97.1% | detected |
+| left_portal_vein | 96.8% | 97.0% | detected |
+| cystic_artery_superficial | 77.2% | 75.2% | detected |
+| cystic_artery_deep | 74.9% | 75.1% | detected |
+| gallstone_1 | 95.4% | 94.7% | detected |
+| gallstone_2 | 92.1% | 92.8% | detected |
+| calot_lymph_node | 92.1% | 92.5% | detected |
+
+Coverage 100% for every class and structure in both. Timing: sweep + reconstruction 16 s (yaw 0) / 31 s
+(0 + 90) with labels only; complete (fill + ground truth + instances + metrics + report with figures) ~7 s;
+evaluation alone ~1.3 s; instance masks 0.6 s.
+
+Observation: yaw 0 + 90 is slightly worse than yaw 0 alone for the thin walls (vein wall Dice 0.645 vs 0.736),
+not better. Checked: ties are not the cause (0.02% of voxels tied). The frames lie exactly on voxel faces
+(y = 0 mod 0.5 mm at 0.5 mm spacing from the region edge), so every voxel is sampled 0.25 mm from its centre,
+on its lower y face (yaw 0) and lower x face (yaw 90); walls thinner than a voxel then disagree between the two.
+To examine in S5 (spacing 0.25 mm, a half-voxel offset of the lanes, voxel size).
+
+S4 deviations from the prompt / decisions:
+- One-voxel shift test (decided with the user): the standard symmetric MSD is ~0.45-0.7 voxel for a one-voxel
+  shift (measured 0.29-0.32 mm for the lumen classes at 0.5 mm; surfaces parallel to the shift do not move), so
+  the test checks HD95 = 1 voxel (+/- 30%) and MSD 0.4-0.8 voxel; a separate slab test checks MSD ~ full shift.
+- Structure recall uses "effective" voxels: the instance's geometric voxels whose true label is its own label
+  (a stone inside the GB lumen counts for the stone, not the GB). Statuses: detected / missed / not covered
+  (coverage < 20 %) / no voxels. Wall coverage and recall reported alongside.
+- Topology "not covered" when either lumen is < 20 % observed.
+- Report folder also holds `slices_errors.png` (centre slices, wrong voxels magenta). `snapshot_3d` got
+  per-face colouring for the distance overlay; `SliceView` got an error mode (key e toggles it after c).
+- Key c also opens the report folder in Explorer; menu step 6 `evaluate` (with `--fill`) added, later steps
+  now 7-11.
+
 ## Tests
 
-`python -m pytest tests` after S3 (2026-10-08): **118 passed, 1 xfailed** in 114 s (S2: 110 passed, 1 xfailed; S3 adds
-8 in `tests/mapping/test_render.py`; anatomy + tracking 58 passed, 1 xfailed, as upstream). Slowest mapping
+`python -m pytest tests` after S4 (2026-10-08): **128 passed, 1 xfailed** in 126 s (S3: 118 passed, 1 xfailed; S4 adds
+10 in `tests/mapping/test_evaluate.py`; anatomy + tracking 58 passed, 1 xfailed, as upstream). Slowest mapping
 tests: the S2 ground-truth block sweep (~12 s), the S0 50-frame lane (~4.7 s), S2 incremental vs batch (~4.7 s). The xfail is the known tracking limit
 `300mm_tilt15` with ID 0 + ID 5 (face z error ~1.6 mm). `viewer3d/` is copied but untested here.
 
@@ -169,6 +235,7 @@ tests: the S2 ground-truth block sweep (~12 s), the S0 50-frame lane (~4.7 s), S
 - Probe for this project: 30 mm wide, 50 mm deep, 0.1 mm pixels, frames 501 x 301; simulator always with
   `persistence=0`.
 - Recognition: oracle labels first (per-frame ground truth from the simulator).
+- Surface distance: standard symmetric MSD + HD95; shift test on HD95 (decided at S4, 2026-10-08).
 - 3D views (decided at S3, 2026-10-08): OpenCV slice views, matplotlib off-screen snapshot and STL export
   (always available, tested headless), plus a browser 3D page (viewer3d template, key b) and an optional live
   PyVista window (`--live3d` / key p; pyvista now imports and renders here, kept optional with fallback).
@@ -194,6 +261,6 @@ tests: the S2 ground-truth block sweep (~12 s), the S0 50-frame lane (~4.7 s), S
 
 ## Next step
 
-Watch a full sweep with the live reconstruction (`python -m orvue_us_inverse scripted --yaw 0 90 --live3d`),
-check the slices, coverage, live 3D window and browser view by eye; then S4 (`PLAN_inverse_mapping.md`):
-evaluation and "complete".
+Look at the S4 reports in `output/results/` (report.md, overlay_3d.png, structures.png, slices_errors.png) and try
+key c in `python -m orvue_us_inverse scripted`; then S5 (`PLAN_inverse_mapping.md`): sweep-strategy
+experiments, including the voxel-face sampling observation above.
