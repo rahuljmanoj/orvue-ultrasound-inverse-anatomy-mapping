@@ -366,7 +366,7 @@ PyVista / VTK cannot run on this machine (Windows Application Control), so the p
 
 ```text
 SESSION S3: live view of the reconstruction during the scripted sweep. No PyVista / VTK (blocked on this
-machine).
+machine). May work, try again. 
 
 1. mapping/render.py:
    - SliceView (OpenCV image, no window in the module): three orthogonal slices through a movable crosshair
@@ -390,7 +390,7 @@ machine).
    the grid; slice images have the expected shapes and colours; updating twice is idempotent; snapshot PNG
    written. Measure the slice update (target <= 50 ms) and full mesh extraction for a normal-case
    reconstruction at 0.5 mm (target <= 300 ms); report both.
-Tell me the command to run a full scripted sweep and watch the reconstruction grow.
+Tell me the command to run a full scripted sweep and watch the reconstruction grow. Is the browser based 3d viewer  also an option
 ```
 
 ## 7. Session prompts S4–S7

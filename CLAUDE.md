@@ -33,7 +33,7 @@ src/orvue_us_inverse/        the package (below)
 tests/                       test_template.py, test_standalone.py, test_anatomy.py, test_tracking.py,
                              helpers/synthetic_scene.py, mapping/test_probe.py,
                              mapping/test_sweep_io.py, mapping/test_poses_acquisition.py,
-                             mapping/test_run_scripted.py, mapping/test_recon.py
+                             mapping/test_run_scripted.py, mapping/test_recon.py, mapping/test_render.py
 output/                      run-time output, gitignored: captures/, logs/, export/, viewer3d/, cache/, sweeps/,
                              results/
 PLAN_inverse_mapping.md      session plan for the inverse mapping
@@ -51,8 +51,8 @@ UPSTREAM.md                  origin of the copied simulator code and its change 
   CACHE_DIR, SWEEPS_DIR, RESULTS_DIR.
 - `core/example.py`: example area module (`load_settings`, `scaled`, `main`).
 - `mapping/`: inverse mapping (see Inverse mapping): `probe.py`, `config.py`, `sweep_io.py`, `poses.py`,
-  `acquisition.py`, `recon.py`, app `run_scripted.py`, script `reconstruct_sweep.py`; placeholders `render.py`,
-  `evaluate.py`, `experiments.py`, `errors.py`.
+  `acquisition.py`, `recon.py`, `render.py`, `live3d.py` (optional PyVista), app `run_scripted.py`, script
+  `reconstruct_sweep.py`; placeholders `evaluate.py`, `experiments.py`, `errors.py`.
 - Copied from the simulator (`UPSTREAM.md`):
   - `simulation/anatomy.py`: tissue table `TISSUES` (labels 0-10), `Tube` / `Blob`, `Anatomy`, `build_case`,
     `CASES`, `CONNECTED`, `validate()`, `calot_triangle()`. All geometry lives here.
@@ -222,7 +222,8 @@ caterpillar_hump, inflamed_obese (5 mm GB wall, 9 mm fat, impacted Hartmann ston
   | `run_scripted.py` | App `python -m orvue_us_inverse.mapping.run_scripted` (menu step `scripted`); `ScriptedPlayback` holds the state and draws without windows | S1 |
   | `recon.py` | `VoxelGrid` (`index`, `flat_index`, `centre`, `centre_points`), `pixel_points(T, probe, elev_mm)` (= `plane_points`, exact), `LabelCompounder(grid, n_classes=11, probe, splat_mm=0)` (`from_sweep`, `insert`, `insert_batch`, `result`, `intensity`, `observed`), `fill_small_holes(labels, max_gap_voxels=1)`, `ground_truth`, `interior_mask` | S2 |
   | `reconstruct_sweep.py` | Script `python -m orvue_us_inverse.mapping.reconstruct_sweep [sweep.npz]` (menu step `recon`; newest sweep by default) | S2 |
-  | `render.py` | Slice views, surfaces, off-screen 3D snapshots | S3 |
+  | `render.py` | `SliceView(grid, crosshair, gt)` (`update(comp or volume)`, `click`, `move`; layout xy left, xz / yz right), `surface_meshes(labels, grid)` (marching cubes per `GROUPS`: bile, arterial / venous blood, stone, lymph node; 5 Taubin iterations; clamped to the grid), `snapshot_3d` (matplotlib Agg), `export_stl`, `browser_payload` / `write_browser_view` (viewer3d page, cases reconstruction / reconstruction_vs_truth / ground_truth) | S3 |
+  | `live3d.py` | `Live3D` PyVista window (`update(meshes, gt)`, `process()`, `closed`, `screenshot`); optional extra `view3d` | S3 |
   | `evaluate.py` | Ground-truth voxels, metrics, report | S4 |
   | `experiments.py` | Headless parameter studies | S5, S7 |
   | `errors.py` | Pose-error injection | S7 |
@@ -253,8 +254,12 @@ caterpillar_hump, inflamed_obese (5 mm GB wall, 9 mm fat, impacted Hartmann ston
   `paths.RESULTS_DIR` (`output/results`); both created on demand, gitignored.
 - `PLAN_inverse_mapping.md` is the session plan (one narrow, tested step per session); `STATUS.md` is the state,
   updated at the end of every session (results, test counts, decisions, known issues, next step).
-- Tests are headless (no windows, no camera, no browser). No PyVista / VTK (blocked by Windows Application
-  Control on this machine): do not import or install them.
+- Tests are headless (no windows, no camera, no browser). PyVista / VTK: only in `mapping/live3d.py`, optional
+  (extra `view3d`; pyvista 0.49.0 / vtk 9.7.1 import and render here since 2026-10-08, earlier blocked by Windows
+  Application Control). Everything else, and every test except `test_live3d_off_screen` (skipped without
+  pyvista), works without them; the apps fall back to the matplotlib snapshot / browser page.
+- Live view colours (slices, surfaces): bile 3 #639922, arterial blood 7 #E24B4A, venous blood 9 #378ADD,
+  stone 4 #FAC775, lymph node 10 #AFA9EC; liver, fat, walls muted greys; unobserved near-black.
 
 ## Rules
 - Read-only (frozen baselines from the simulator; use and import, do not edit without asking):
@@ -276,14 +281,14 @@ caterpillar_hump, inflamed_obese (5 mm GB wall, 9 mm fat, impacted Hartmann ston
 ## Running
 - Environment: conda env `orvue-robot`, Python 3.11.16 (`C:/Users/rahul/miniconda3/envs/orvue-robot/python.exe`).
   numpy 2.4.6, scipy 1.17.1, opencv-contrib-python 5.0.0.93, matplotlib 3.11.2, scikit-image 0.26.0,
-  pyrealsense2 2.58.4 (optional extra `camera`), reportlab 5.0.1, pytest 9.1.1. The 3D viewer needs a browser
-  (three.js from jsDelivr).
+  pyrealsense2 2.58.4 (optional extra `camera`), reportlab 5.0.1, pytest 9.1.1, pyvista 0.49.0 + vtk 9.7.1
+  (optional extra `view3d`). The 3D viewer and the browser 3D view need a browser (three.js from jsDelivr).
 - Install once: `pip install -r requirements.txt` and `pip install -e .`.
 - `python -m orvue_us_inverse` (menu) or
   `python -m orvue_us_inverse viewer | calibrate | sim | scripted | recon | run | test | board | anatomy |
   manual`.
 - `python -m orvue_us_inverse scripted [--case X] [--yaw 0 90] [--overlap 20] [--spacing 0.5] [--speed 10]
-  [--no-images]` (keys space pause, + / - playback speed, a anatomy, r restart, s save, q / Esc quit).
+  [--no-images] [--live3d]` (keys space pause, + / - speed, v top view (black box / coverage / anatomy), r restart, s save sweep, 3 3D snapshot + STL, b browser 3D, p live 3D, g truth contours, slices: click / arrows / PgUp PgDn, q quit).
 - `python -m orvue_us_inverse recon [sweep.npz] [--voxel 0.5] [--fill] [--max-gap 1] [--splat 0]`
   (default: the newest sweep in `output/sweeps/`).
 - `python -m orvue_us_inverse sim [case] [--track] [--cam-view] [--mouse]` (keys q/e yaw, n/p case, g ground truth,

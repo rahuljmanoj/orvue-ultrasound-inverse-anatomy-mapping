@@ -12,7 +12,7 @@ Commands (extra options are passed on to the module):
     viewer      check the probe tracking (D405)      orvue_us_inverse.tracking.viewer
     calibrate   probe calibration                    orvue_us_inverse.tracking.calibrate -> config/calibration.json
     sim         Ultrasound Imaging Simulator         orvue_us_inverse.simulation.bmode   [case] [--track] [--cam-view] [--mouse]
-    scripted    scripted sweep, live playback        orvue_us_inverse.mapping.run_scripted [--case X] [--yaw 0 90] [--no-images] ...
+    scripted    scripted sweep, live reconstruction  orvue_us_inverse.mapping.run_scripted [--case X] [--yaw 0 90] [--no-images] [--live3d] ...
     recon       reconstruct a saved sweep            orvue_us_inverse.mapping.reconstruct_sweep [sweep.npz] [--voxel 0.5] [--fill] -> output/results/
     run         example step                         orvue_us_inverse.core.example
     test        all tests                            pytest tests
@@ -52,8 +52,8 @@ MENU = [
     ("CAMERA TRACKING", "1", "Check tracking", "camera view, phantom map, readouts", "viewer", []),
     ("CAMERA TRACKING", "2", "Calibrate probe", "yaw and face position", "calibrate", []),
     ("SIMULATOR", "3", "Ultrasound Imaging Simulator", "B-mode; m camera / mouse, t camera view", "sim", ["--cam-view"]),
-    ("INVERSE MAPPING", "4", "Scripted sweep", "live playback, yaw 0 + 90; s saves the sweep", "scripted",
-     ["--yaw", "0", "90"]),
+    ("INVERSE MAPPING", "4", "Scripted sweep", "yaw 0 + 90, live reconstruction + 3D; s saves", "scripted",
+     ["--yaw", "0", "90", "--live3d"]),
     ("INVERSE MAPPING", "5", "Reconstruct latest sweep", "label volume + slice PNGs -> output/results/", "recon",
      []),
     ("MAIN", "6", "Run example", "writes output/logs/example.txt", "run", []),

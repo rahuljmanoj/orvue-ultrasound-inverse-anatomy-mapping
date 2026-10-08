@@ -181,6 +181,22 @@ class LabelCompounder:
         lab[self.hits == 0] = UNOBSERVED
         return lab.reshape(self.grid.shape)
 
+    def result_slice(self, axis: int, index: int) -> np.ndarray:
+        """result() restricted to one slice (axis 0: x = index -> (ny, nz); 1: y -> (nx, nz); 2: z -> (nx, ny)),
+        computed from that slice's votes only (fast enough for a live view)."""
+        nx, ny, nz = self.grid.shape
+        sel = [slice(None)] * 3
+        sel[axis] = index
+        votes = self.votes.reshape(nx, ny, nz, self.n_classes)[tuple(sel)]
+        lab = np.argmax(votes, axis=-1).astype(np.int8)
+        lab[self.hits.reshape(nx, ny, nz)[tuple(sel)] == 0] = UNOBSERVED
+        return lab
+
+    def column_hits(self) -> np.ndarray:
+        """Hits summed over depth, (nx, ny): the coverage map seen from above."""
+        nx, ny, nz = self.grid.shape
+        return self.hits.reshape(nx, ny, nz).sum(axis=2, dtype=np.uint64)
+
     def intensity(self) -> np.ndarray | None:
         """float32 mean intensity volume (NaN where no image pixel landed), or None without images."""
         if not self.intensity_hits.any():

@@ -20,6 +20,7 @@ dependencies = [
 
 [project.optional-dependencies]
 camera = ["pyrealsense2>=2.55"]
+view3d = ["pyvista>=0.44"]               # optional live 3D window (mapping/live3d.py)
 test = ["pytest>=8"]
 
 [project.scripts]
