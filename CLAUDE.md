@@ -33,7 +33,7 @@ src/orvue_us_inverse/        the package (below)
 tests/                       test_template.py, test_standalone.py, test_anatomy.py, test_tracking.py,
                              helpers/synthetic_scene.py, mapping/test_probe.py,
                              mapping/test_sweep_io.py, mapping/test_poses_acquisition.py,
-                             mapping/test_run_scripted.py
+                             mapping/test_run_scripted.py, mapping/test_recon.py
 output/                      run-time output, gitignored: captures/, logs/, export/, viewer3d/, cache/, sweeps/,
                              results/
 PLAN_inverse_mapping.md      session plan for the inverse mapping
@@ -43,16 +43,16 @@ UPSTREAM.md                  origin of the copied simulator code and its change 
 
 ## Files (`src/orvue_us_inverse/`)
 - `__main__.py`: single entry point; menu (steps in the order of use, 0 = exit) or
-  `python -m orvue_us_inverse <command>` (`viewer`, `calibrate`, `sim`, `scripted`, `run`, `test`, `board`,
-  `anatomy`, `manual`); console script `orvue-us-inverse`. Runs `python -m <module>` subprocesses from the repository folder
+  `python -m orvue_us_inverse <command>` (`viewer`, `calibrate`, `sim`, `scripted`, `recon`, `run`, `test`,
+  `board`, `anatomy`, `manual`); console script `orvue-us-inverse`. Runs `python -m <module>` subprocesses from the repository folder
   (stdin = DEVNULL, 1 s pause so the D405 is released). New steps: `COMMANDS` + `MENU`.
 - `paths.py`: REPO_ROOT, PACKAGE_DIR, LOGO_PATH, SETTINGS_PATH, CALIBRATION_PATH, UPSTREAM_PATH, DOCS_DIR, FIGURES_DIR,
   IMAGES_DIR, PRINT_DIR, MANUAL_PDF, BOARD_PDF, OUTPUT_DIR, CAPTURES_DIR, LOGS_DIR, EXPORT_DIR, VIEWER3D_OUT_DIR,
   CACHE_DIR, SWEEPS_DIR, RESULTS_DIR.
 - `core/example.py`: example area module (`load_settings`, `scaled`, `main`).
 - `mapping/`: inverse mapping (see Inverse mapping): `probe.py`, `config.py`, `sweep_io.py`, `poses.py`,
-  `acquisition.py`, app `run_scripted.py`; placeholders `recon.py`, `render.py`, `evaluate.py`, `experiments.py`,
-  `errors.py`.
+  `acquisition.py`, `recon.py`, app `run_scripted.py`, script `reconstruct_sweep.py`; placeholders `render.py`,
+  `evaluate.py`, `experiments.py`, `errors.py`.
 - Copied from the simulator (`UPSTREAM.md`):
   - `simulation/anatomy.py`: tissue table `TISSUES` (labels 0-10), `Tube` / `Blob`, `Anatomy`, `build_case`,
     `CASES`, `CONNECTED`, `validate()`, `calot_triangle()`. All geometry lives here.
@@ -220,7 +220,8 @@ caterpillar_hump, inflamed_obese (5 mm GB wall, 9 mm fat, impacted Hartmann ston
   | `poses.py` | `ScriptedSweep(cfg)`: lanes (`Lane`, `planned_lanes()`), `segments` (lanes + unrecorded transitions), `samples(step_mm=0.05)` / `pose_at(t)` -> `Sample(t, T, recording, lane)`, `lane_at(t)`, `expected_frames()`, `coverage()`, `summary()`; mouse (S6), camera (S7) | S1 |
   | `acquisition.py` | `Acquirer(sim, sweep_cfg, acq_cfg)`: `feed(T, t, recording)` -> `FrameRecord` or None; `.sweep` | S1 |
   | `run_scripted.py` | App `python -m orvue_us_inverse.mapping.run_scripted` (menu step `scripted`); `ScriptedPlayback` holds the state and draws without windows | S1 |
-  | `recon.py` | Voxel grid, label compounding, coverage | S2 |
+  | `recon.py` | `VoxelGrid` (`index`, `flat_index`, `centre`, `centre_points`), `pixel_points(T, probe, elev_mm)` (= `plane_points`, exact), `LabelCompounder(grid, n_classes=11, probe, splat_mm=0)` (`from_sweep`, `insert`, `insert_batch`, `result`, `intensity`, `observed`), `fill_small_holes(labels, max_gap_voxels=1)`, `ground_truth`, `interior_mask` | S2 |
+  | `reconstruct_sweep.py` | Script `python -m orvue_us_inverse.mapping.reconstruct_sweep [sweep.npz]` (menu step `recon`; newest sweep by default) | S2 |
   | `render.py` | Slice views, surfaces, off-screen 3D snapshots | S3 |
   | `evaluate.py` | Ground-truth voxels, metrics, report | S4 |
   | `experiments.py` | Headless parameter studies | S5, S7 |
@@ -239,6 +240,13 @@ caterpillar_hump, inflamed_obese (5 mm GB wall, 9 mm fat, impacted Hartmann ston
   0.05 mm from each lane start; capture every `frame_spacing_mm` of face-centre travel or `angle_trigger_deg`,
   plus the first pose of every lane: 201 frames per 100 mm lane at 0.5 mm. Poses from `pose_from_xy_yaw` are
   float32, so the trigger has a 1e-4 mm tolerance.
+- Reconstruction (oracle labels): pixel (r, c) of a frame is at o + lat[c] u + ax[r] n (float32, as
+  `plane_points`), binned into the voxel containing it (floor; a point on a voxel face goes to the higher
+  voxel); votes per class (uint16, saturating), voxel label = most votes, TIE: lowest class index; -1 =
+  unobserved. One `np.unique` per frame (~9-10 ms/frame at 0.5 mm). `fill_small_holes` fills a voxel only
+  between observed voxels along an axis (gap <= max_gap), one pass, majority of the bounding labels.
+  Recon file `output/results/recon_<sweep>.npz`: labels, hits, intensity (empty without images), grid,
+  metadata (JSON).
 - Frames 501 x 301 (depth x lateral). Timing (Prep, 2026-10-08): `render()` ~78 ms/frame, `labels_image()`
   ~13 ms/frame; oracle-only sweeps use `labels_image()` alone.
 - Data: sweeps in `paths.SWEEPS_DIR` (`output/sweeps`), reconstructions / metrics / reports in
@@ -272,9 +280,12 @@ caterpillar_hump, inflamed_obese (5 mm GB wall, 9 mm fat, impacted Hartmann ston
   (three.js from jsDelivr).
 - Install once: `pip install -r requirements.txt` and `pip install -e .`.
 - `python -m orvue_us_inverse` (menu) or
-  `python -m orvue_us_inverse viewer | calibrate | sim | scripted | run | test | board | anatomy | manual`.
+  `python -m orvue_us_inverse viewer | calibrate | sim | scripted | recon | run | test | board | anatomy |
+  manual`.
 - `python -m orvue_us_inverse scripted [--case X] [--yaw 0 90] [--overlap 20] [--spacing 0.5] [--speed 10]
   [--no-images]` (keys space pause, + / - playback speed, a anatomy, r restart, s save, q / Esc quit).
+- `python -m orvue_us_inverse recon [sweep.npz] [--voxel 0.5] [--fill] [--max-gap 1] [--splat 0]`
+  (default: the newest sweep in `output/sweeps/`).
 - `python -m orvue_us_inverse sim [case] [--track] [--cam-view] [--mouse]` (keys q/e yaw, n/p case, g ground truth,
   c contact, m camera / mouse, t camera view, z zoom fit, v 3D viewer, Esc quit).
 - Tests: `python -m pytest tests` from the repository root (no hardware needed; ~1 min).
