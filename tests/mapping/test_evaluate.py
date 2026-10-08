@@ -147,7 +147,7 @@ def test_report_files(an, gt, inst, tmp_path):
 
 @pytest.fixture(scope="module")
 def short_sweep(tmp_path_factory):
-    """Oracle labels, one lane at 0.5 mm over the hilum (x 40-70 mm), saved."""
+    """Oracle labels, one lane at the default 0.25 mm over the hilum (x 40-70 mm, y 20-60 mm: 161 frames), saved."""
     cfg = SweepConfig(region_x_mm=(40, 70), region_y_mm=(20, 60))
     acq = Acquirer(make_simulator("normal"), cfg, AcquisitionConfig(store_images=False))
     for s in ScriptedSweep(cfg).samples():
@@ -164,7 +164,7 @@ def test_evaluate_sweep_script(short_sweep, tmp_path):
     r = json.load(open(tmp_path / folder / "report.json", encoding="utf-8"))
     st = {s["name"]: s["status"] for s in r["structures"]}
     assert st["chd_cbd"] == "detected" and st["gallstone_1"] == "not covered"
-    assert r["fill"] is True and r["frames"] == 81
+    assert r["fill"] is True and r["frames"] == 161
 
 
 def test_app_complete(tmp_path):
@@ -176,7 +176,7 @@ def test_app_complete(tmp_path):
     assert app.completed and app.advance(10.0) == 0                     # acquisition stopped
     assert "slices_errors.png" in os.listdir(folder) and "report.md" in os.listdir(folder)
     assert "| Class |" in table and app.slice_view.errors
-    assert app.evaluation.report["sweep_finished"] is True and app.evaluation.report["frames"] == 81
+    assert app.evaluation.report["sweep_finished"] is True and app.evaluation.report["frames"] == 161
     img = app.slice_image()
     assert img.shape[1] == app.slice_view.size[1]
     app.restart()

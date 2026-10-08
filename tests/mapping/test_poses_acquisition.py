@@ -78,7 +78,7 @@ def test_serpentine_and_transitions():
             assert np.dot(np.subtract(a.end, a.start), np.subtract(b.end, b.start)) < 0
     kinds = [s.recording for s in sw.segments]
     assert kinds == [True, False] * 7 + [True]        # lanes joined by lift-off transitions
-    assert sw.expected_frames() == 8 * 201
+    assert sw.expected_frames() == 8 * 401                      # default spacing 0.25 mm
 
 
 def test_oblique_yaw_clipped_to_contact(sim):
@@ -130,7 +130,7 @@ def test_full_sweep_triggers(sim, yaws):
     for lane in sw.lanes:
         assert per_lane[lane.index] == math.floor(lane.length_mm / cfg.frame_spacing_mm + 1e-6) + 1
     if yaws == [0.0, 90.0]:
-        assert all(per_lane[ln.index] == 201 for ln in sw.lanes)     # 100 mm / 0.5 mm + the start frame
+        assert all(per_lane[ln.index] == 401 for ln in sw.lanes)     # 100 mm / 0.25 mm + the start frame
     # spacing within each lane: frame_spacing_mm +/- 10 %
     for (fa, fb) in zip(frames, frames[1:]):
         if sw.lane_at(fa.t) is sw.lane_at(fb.t):
@@ -153,8 +153,8 @@ def test_rotation_trigger_and_contact(sim):
 
 # ---------------------------------------------------------------- real capture
 def test_real_capture_lane_and_transition(sim):
-    """Oracle labels only: lane 1 in full, the lift-off, then 5 mm of lane 2."""
-    cfg = SweepConfig()
+    """Oracle labels only, 0.5 mm spacing: lane 1 in full, the lift-off, then 5 mm of lane 2."""
+    cfg = SweepConfig(frame_spacing_mm=0.5)
     sw = ScriptedSweep(cfg)
     acq = Acquirer(sim, cfg, AcquisitionConfig(store_images=False))
     run(acq, sw, until_t=sw.segments[2].t0 + 5.0 / cfg.speed_mm_s + 1e-9)
@@ -166,7 +166,7 @@ def test_real_capture_lane_and_transition(sim):
 
 
 def test_short_sweep_save_load(sim, tmp_path):
-    cfg = SweepConfig(yaw_list_deg=[0.0, 90.0])
+    cfg = SweepConfig(yaw_list_deg=[0.0, 90.0], frame_spacing_mm=0.5)
     sw = ScriptedSweep(cfg)
     sim._rng = np.random.default_rng(0)
     acq = Acquirer(sim, cfg, AcquisitionConfig(store_images=True), note="S1 test")

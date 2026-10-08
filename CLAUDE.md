@@ -243,7 +243,8 @@ caterpillar_hump, inflamed_obese (5 mm GB wall, 9 mm fat, impacted Hartmann ston
   clipped to where the face centre is on the region (= `in_contact`); serpentine (lane k along +v when k is
   even). Transitions (lift-off) move at the sweep speed and rotate at 45 deg/s; never recorded. Samples every
   0.05 mm from each lane start; capture every `frame_spacing_mm` of face-centre travel or `angle_trigger_deg`,
-  plus the first pose of every lane: 201 frames per 100 mm lane at 0.5 mm. Poses from `pose_from_xy_yaw` are
+  plus the first pose of every lane: 401 frames per 100 mm lane at the default 0.25 mm (201 at 0.5 mm; default
+  0.25 mm since S5, decided 2026-10-08). Poses from `pose_from_xy_yaw` are
   float32, so the trigger has a 1e-4 mm tolerance.
 - Reconstruction (oracle labels): pixel (r, c) of a frame is at o + lat[c] u + ax[r] n (float32, as
   `plane_points`), binned into the voxel containing it (floor; a point on a voxel face goes to the higher
@@ -297,7 +298,7 @@ caterpillar_hump, inflamed_obese (5 mm GB wall, 9 mm fat, impacted Hartmann ston
 - `python -m orvue_us_inverse` (menu) or
   `python -m orvue_us_inverse viewer | calibrate | sim | scripted | recon | evaluate | run | test | board |
   experiments | anatomy | manual`.
-- `python -m orvue_us_inverse scripted [--case X] [--yaw 0 90] [--overlap 20] [--spacing 0.5] [--speed 10]
+- `python -m orvue_us_inverse scripted [--case X] [--yaw 0 90] [--overlap 20] [--spacing 0.25] [--speed 10]
   [--no-images] [--live3d]` (keys space pause, + / - speed, v top view (black box / coverage / anatomy), r restart, s save sweep, 3 3D snapshot + STL, b browser 3D, p live 3D, g truth contours, c complete (evaluate, report), e error colouring, slices: click / arrows / PgUp PgDn, q quit).
 - `python -m orvue_us_inverse recon [sweep.npz] [--voxel 0.5] [--fill] [--max-gap 1] [--splat 0]`
   (default: the newest sweep in `output/sweeps/`).

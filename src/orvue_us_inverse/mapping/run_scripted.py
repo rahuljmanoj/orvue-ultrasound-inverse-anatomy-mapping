@@ -2,7 +2,7 @@
 orvue_us_inverse.mapping.run_scripted - live playback of a scripted sweep over the hidden 100 x 100 mm box, with the
 reconstruction growing as frames are captured and the evaluation on "complete" (S1, S3, S4).
 
-    python -m orvue_us_inverse.mapping.run_scripted [--case normal] [--yaw 0 90] [--overlap 20] [--spacing 0.5]
+    python -m orvue_us_inverse.mapping.run_scripted [--case normal] [--yaw 0 90] [--overlap 20] [--spacing 0.25]
                                                      [--speed 10] [--no-images] [--live3d]
     python -m orvue_us_inverse scripted [options]
 
@@ -71,7 +71,7 @@ KEY_LEFT, KEY_UP, KEY_RIGHT, KEY_DOWN, KEY_PGUP, KEY_PGDN = 2424832, 2490368, 25
 
 
 def sweep_filename(case: str, cfg: SweepConfig, store_images: bool, stamp: str | None = None) -> str:
-    """<case>_<settings>_<time>.npz, e.g. normal_yaw0-90_ov20_sp0.5_v10_20261008-141500.npz."""
+    """<case>_<settings>_<time>.npz, e.g. normal_yaw0-90_ov20_sp0.25_v10_20261008-141500.npz."""
     yaws = "-".join(f"{y:g}" for y in cfg.yaw_list_deg)
     settings = f"yaw{yaws}_ov{cfg.overlap_pct:g}_sp{cfg.frame_spacing_mm:g}_v{cfg.speed_mm_s:g}"
     if not store_images:
@@ -362,7 +362,7 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--case", default="normal", choices=sorted(CASES))
     p.add_argument("--yaw", type=float, nargs="+", default=[0.0], help="orientations in degrees, e.g. 0 90")
     p.add_argument("--overlap", type=float, default=20.0, help="requested lane overlap in percent")
-    p.add_argument("--spacing", type=float, default=0.5, help="frame spacing in mm")
+    p.add_argument("--spacing", type=float, default=SweepConfig().frame_spacing_mm, help="frame spacing in mm")
     p.add_argument("--speed", type=float, default=10.0, help="probe speed in mm/s (simulated time)")
     p.add_argument("--no-images", action="store_true", help="store oracle labels only (no B-mode rendering)")
     p.add_argument("--live3d", action="store_true", help="open the live PyVista 3D window at the start")

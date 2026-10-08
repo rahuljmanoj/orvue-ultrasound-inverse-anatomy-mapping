@@ -67,7 +67,7 @@ class SweepConfig:
     """
     yaw_list_deg: list[float] = field(default_factory=lambda: [0.0])
     overlap_pct: float = 20.0
-    frame_spacing_mm: float = 0.5
+    frame_spacing_mm: float = 0.25          # S5 recommendation (2026-10-08); was 0.5
     angle_trigger_deg: float = 1.0
     speed_mm_s: float = 10.0
     serpentine: bool = True

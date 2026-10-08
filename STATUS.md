@@ -4,7 +4,7 @@ State of the inverse-mapping project. Updated at the end of every session (plan:
 
 | | |
 |---|---|
-| Repository | rahuljmanoj/orvue-ultrasound-inverse-anatomy-mapping, `main` after the S5 merge (branch `s5`, 2026-10-08) |
+| Repository | rahuljmanoj/orvue-ultrasound-inverse-anatomy-mapping, `main` after the default-spacing merge (branch `default-spacing-025`, 2026-10-08) |
 | Simulator code | copied in from rahuljmanoj/orvue-ultrasound-simulator `e789389`; frozen; see `UPSTREAM.md` |
 | Environment | conda env `orvue-robot`, Python 3.11.16 (`C:/Users/rahul/miniconda3/envs/orvue-robot/python.exe`); import check passed (Prep P2) |
 | Last update | 2026-10-08, after S5 |
@@ -23,6 +23,7 @@ State of the inverse-mapping project. Updated at the end of every session (plan:
 | S2 reconstruction (oracle labels) | Done | `mapping/recon.py`, script `mapping/reconstruct_sweep.py` (menu 5 `recon`); `tests/mapping/test_recon.py` (9). Details below |
 | S3 live view of the reconstruction | Done | `mapping/render.py`, `mapping/live3d.py` (optional PyVista), `run_scripted.py` (live reconstruction, slices, coverage, 3D outputs); `tests/mapping/test_render.py` (8). Details below |
 | S4 evaluation and "complete" | Done | `mapping/evaluate.py`, script `mapping/evaluate_sweep.py` (menu 6 `evaluate`), key c in `run_scripted.py`; `tests/mapping/test_evaluate.py` (10). Details below |
+| Default spacing 0.25 mm | Done | `SweepConfig` / `--spacing` default 0.5 -> 0.25 mm; tests that check the default updated (401 frames per lane), tests that only need a sweep pinned to 0.5 mm (speed) |
 | S5 sweep-strategy experiments | Done | `mapping/experiments.py`, script `mapping/run_experiments.py` (menu 7 `experiments`); `tests/mapping/test_experiments.py` (5); full grid 156 runs in 16 min. Details below |
 | S6-S7 | Not started | Sweeps and reports in `output/` (gitignored) |
 
@@ -306,8 +307,12 @@ tests: the S2 ground-truth block sweep (~12 s), the S0 50-frame lane (~4.7 s), S
   `persistence=0`.
 - Recognition: oracle labels first (per-frame ground truth from the simulator).
 - Surface distance: standard symmetric MSD + HD95; shift test on HD95 (decided at S4, 2026-10-08).
-- Default sweep strategy (S5 recommendation, 2026-10-08, to confirm): 0.25 mm spacing, 20 % overlap, yaw 0, 0.5 mm
-  voxels; the code defaults (`SweepConfig`: 0.5 mm) are unchanged until confirmed.
+- Default frame spacing 0.25 mm (S5 recommendation, decided 2026-10-08): `SweepConfig.frame_spacing_mm` and the
+  app's `--spacing` default changed from 0.5 to 0.25 mm; 20 % overlap, yaw 0 and 0.5 mm voxels were already the
+  defaults. A full yaw-0 sweep is now 1604 frames (yaw 0 + 90: 3208); with B-mode images the app plays at
+  ~0.4x real time and a saved sweep is ~160 MB (yaw 0) / ~330 MB (0 + 90); --no-images keeps it ~2-5 MB. The
+  half-voxel grid offset stays an experiment option (not a default). The S0-S4 figures in this file were
+  measured at 0.5 mm.
 - 3D views (decided at S3, 2026-10-08): OpenCV slice views, matplotlib off-screen snapshot and STL export
   (always available, tested headless), plus a browser 3D page (viewer3d template, key b) and an optional live
   PyVista window (`--live3d` / key p; pyvista now imports and renders here, kept optional with fallback).
@@ -333,5 +338,5 @@ tests: the S2 ground-truth block sweep (~12 s), the S0 50-frame lane (~4.7 s), S
 
 ## Next step
 
-Decide on the S5 recommendation (0.25 mm spacing, yaw 0; or keep 0.5 mm; grid offset for scripted sweeps) and
-whether to change the `SweepConfig` default; then S6 (`PLAN_inverse_mapping.md`): mouse sweeps.
+S6 (`PLAN_inverse_mapping.md`): mouse sweeps (hand-held speed limit: spacing x frame rate, 0.25 mm at 20 frames/s
+= 5 mm/s).

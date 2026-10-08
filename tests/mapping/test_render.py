@@ -1,6 +1,6 @@
 """mapping/render.py, mapping/live3d.py and the S3 parts of run_scripted (headless, matplotlib Agg) (S3).
 
-Small reconstruction: one lane at 0.5 mm over x 35-65 mm (61 frames of oracle labels). Timing uses the normal
+Small reconstruction: one lane at 0.5 mm spacing over x 35-65 mm (61 frames of oracle labels). Timing uses the normal
 case's ground-truth volume at 0.5 mm, i.e. a perfect whole-region reconstruction (same size and structures).
 """
 import os
@@ -33,7 +33,7 @@ def sim():
 
 @pytest.fixture(scope="module")
 def small(sim):
-    cfg = SweepConfig(region_x_mm=(35, 65), region_y_mm=(35, 65))
+    cfg = SweepConfig(region_x_mm=(35, 65), region_y_mm=(35, 65), frame_spacing_mm=0.5)
     acq = Acquirer(sim, cfg, AcquisitionConfig(store_images=False))
     for s in ScriptedSweep(cfg).samples():
         acq.feed(s.T, s.t, s.recording)
@@ -162,7 +162,7 @@ def test_snapshot_stl_and_browser(small, gt, tmp_path):
 
 
 def test_app_outputs(tmp_path):
-    app = ScriptedPlayback("normal", SweepConfig(), AcquisitionConfig(store_images=False))
+    app = ScriptedPlayback("normal", SweepConfig(frame_spacing_mm=0.5), AcquisitionConfig(store_images=False))
     n = 0
     while n < 150:                                     # lane 1 (x = 15 mm) up to y = 74.5 mm: through the GB
         n += app.advance(1.0)
