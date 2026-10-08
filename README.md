@@ -2,9 +2,13 @@
 
 Orvue Surgical: inverse anatomy mapping for ultrasound. Goal: reconstruct the 3D segmented anatomy from tracked
 2D B-mode frames (the inverse of the Ultrasound Imaging Simulator), then recognise the anatomy. Focus: the
-gallbladder / Calot's triangle anatomy of the simulator (`orvue_us_sim`, repository
-[orvue-ultrasound-simulator](https://github.com/rahuljmanoj/orvue-ultrasound-simulator)), whose 8 anatomy cases,
-B-mode renderer and probe tracking provide the frames, the poses and the ground truth.
+gallbladder / Calot's triangle anatomy of the Ultrasound Imaging Simulator, whose 8 anatomy cases, B-mode renderer
+and probe tracking provide the frames, the poses and the ground truth.
+
+The repository is standalone: the simulator code (`simulation/`, `tracking/`, `ui/`, `viewer3d/`) was copied into
+this package from [orvue-ultrasound-simulator](https://github.com/rahuljmanoj/orvue-ultrasound-simulator) at commit
+`e789389`. The copied files are frozen baselines; their origin, the old -> new path table and every change since
+the copy are in [UPSTREAM.md](UPSTREAM.md).
 
 Built from the Orvue Surgical Python project template: an installable package in `src/`, one entry point with a
 menu, every file location in `paths.py`, committed configuration in `config/`, generated PDFs in `docs/` and
@@ -31,33 +35,46 @@ run-time output in the gitignored `output/`.
    brackets, use **Refactor → Rename → Rename module** on the project folder.
 
 ## Setup
-Python 3.10+, conda environment `orvue-robot` (shared with the simulator, which this project imports).
-Install the simulator first (`pip install -e .` in `../Ultrasound_Simulator`), then from this repository folder:
+Python 3.10+, conda environment `orvue-robot`. From this repository folder:
 ```
 pip install -r requirements.txt
 pip install -e .
 ```
 `pip install -e .` installs the package in editable mode: imports and `python -m orvue_us_inverse` work from any
 folder and code changes take effect without reinstalling. Re-run it only after changing `pyproject.toml`, moving
-the folder or creating a new environment.
+the folder or creating a new environment. The Intel RealSense D405 camera tracking needs the optional extra
+`pip install -e .[camera]` (pyrealsense2, also in `requirements.txt`); everything else, including the tests,
+runs without it.
 
 ## Quick start
 ```
 python -m orvue_us_inverse              menu (steps in the order of use, 0 = exit)
+python -m orvue_us_inverse viewer       check the probe tracking (D405)
+python -m orvue_us_inverse calibrate    probe calibration -> config/calibration.json
+python -m orvue_us_inverse sim [case]   Ultrasound Imaging Simulator ([--track] [--cam-view] [--mouse])
 python -m orvue_us_inverse run          example step -> output/logs/example.txt
 python -m orvue_us_inverse test         all tests
+python -m orvue_us_inverse board        -> docs/print/tracking_board.pdf
+python -m orvue_us_inverse anatomy      3D anatomy viewer in the browser ([--case X] [--export])
 python -m orvue_us_inverse manual       -> docs/Ultrasound Inverse Anatomy Mapping - User Manual.pdf
+```
+Frames and ground truth in code (always `persistence=0`, so each frame belongs to its own pose):
+```python
+from orvue_us_inverse.simulation.anatomy import build_case
+from orvue_us_inverse.simulation.bmode import BModeSimulator
+sim = BModeSimulator(build_case("normal"), persistence=0.0)
+img, lab = sim.render(sim.pose_from_xy_yaw(50, 60, 0), return_labels=True)   # 501 x 301 uint8 / int8 labels
 ```
 The console script `orvue-us-inverse` does the same as `python -m orvue_us_inverse`.
 
 ## Project layout
 ```
-config/                  committed configuration (settings.json)
-docs/                    generated PDFs (manual), figures/, images/
+config/                  committed configuration (settings.json, calibration.json)
+docs/                    generated PDFs (manual), figures/, images/, print/ (tracking board)
 scripts/                 helper scripts outside the package
-src/orvue_us_inverse/      the package
+src/orvue_us_inverse/    the package: core/, reports/ and the copied simulator: simulation/, tracking/, ui/, viewer3d/
 tests/                   pytest tests, helpers/ for synthetic test data
-output/                  generated at run time, gitignored: logs/, export/, cache/
+output/                  generated at run time, gitignored: captures/, logs/, export/, viewer3d/, cache/
 ```
 
 ### Every file
@@ -69,7 +86,9 @@ output/                  generated at run time, gitignored: logs/, export/, cach
 | `requirements.txt` | Pinned versions of the working environment |
 | `README.md` | This file: the only README |
 | `CLAUDE.md` | Conventions for Claude Code sessions |
+| `UPSTREAM.md` | Origin of the copied simulator code (repository, commit), old -> new paths, change log |
 | `config/settings.json` | Example settings, read by `core/example.py` |
+| `config/calibration.json` | Probe calibration of the current probe build, written by `tracking/calibrate.py` |
 | `docs/.gitkeep` | Keeps `docs/` in git until the first PDF is generated |
 | `scripts/rename_project.py` | Turns the template into a new project (package name and title) |
 | `src/orvue_us_inverse/__init__.py` | Package docstring and `__version__` |
@@ -81,15 +100,38 @@ output/                  generated at run time, gitignored: logs/, export/, cach
 | `src/orvue_us_inverse/reports/__init__.py` | Reports sub-package |
 | `src/orvue_us_inverse/reports/pdf_template.py` | Orvue Surgical PDF template (`Doc`), used by every generated PDF |
 | `src/orvue_us_inverse/reports/manual.py` | Builds the user manual PDF from the code |
+| `src/orvue_us_inverse/simulation/__init__.py` | Simulation sub-package (copied) |
+| `src/orvue_us_inverse/simulation/anatomy.py` | Virtual anatomy: tissue table (labels 0-10), tubes / blobs, the 8 cases, `validate` (copied, read-only) |
+| `src/orvue_us_inverse/simulation/bmode.py` | B-mode simulator `BModeSimulator`, simulator window and demo (copied, read-only) |
+| `src/orvue_us_inverse/tracking/__init__.py` | Tracking sub-package (copied) |
+| `src/orvue_us_inverse/tracking/markers.py` | ArUco marker layout, frames, OpenCV boards, pose helpers (copied; layout constants read-only) |
+| `src/orvue_us_inverse/tracking/tracker.py` | `ProbeTracker`: D405 / file capture, probe pose, filters, calibration (copied, read-only) |
+| `src/orvue_us_inverse/tracking/calibrate.py` | Probe calibration (yaw offset, face position) -> `config/calibration.json` (copied) |
+| `src/orvue_us_inverse/tracking/viewer.py` | Live tracking check window, overlay, camera zoom, CSV log (copied) |
+| `src/orvue_us_inverse/tracking/board.py` | Writes `docs/print/tracking_board.pdf` (copied) |
+| `src/orvue_us_inverse/ui/__init__.py` | UI sub-package (copied) |
+| `src/orvue_us_inverse/ui/clinical.py` | Shared clinical window style for the simulator and tracking windows (copied) |
+| `src/orvue_us_inverse/viewer3d/__init__.py` | 3D anatomy viewer sub-package (copied) |
+| `src/orvue_us_inverse/viewer3d/__main__.py` | `python -m orvue_us_inverse.viewer3d` (copied) |
+| `src/orvue_us_inverse/viewer3d/geometry.py` | Triangle meshes of the anatomy, mesh cache, STL / VTP export (copied) |
+| `src/orvue_us_inverse/viewer3d/info.py` | Structure names, colours and descriptions for the viewer (copied) |
+| `src/orvue_us_inverse/viewer3d/viewer.py` | Builds and opens the three.js viewer page, headless screenshots (copied) |
+| `src/orvue_us_inverse/viewer3d/template.html` | three.js viewer page template (copied) |
 | `tests/__init__.py` | Makes `tests` a package (for `tests.helpers`) |
 | `tests/helpers/__init__.py` | Helpers for tests (synthetic data) |
+| `tests/helpers/synthetic_scene.py` | Synthetic D405-like camera frames of the board and probe markers (copied) |
 | `tests/test_template.py` | Tests of paths, settings, example, entry point and manual |
+| `tests/test_standalone.py` | No file under `src/` or `tests/` refers to the simulator's original package |
+| `tests/test_anatomy.py` | Anatomy tests: case geometry and collisions, renderer ground-truth labels (copied) |
+| `tests/test_tracking.py` | Tracking tests on synthetic images: conventions, filters, calibration (copied) |
 
 ## Rules
 - Absolute imports only (`from orvue_us_inverse.core.example import scaled`); no `sys.path` manipulation.
 - Every file location goes in `paths.py`; run-time output under `output/`; committed configuration under `config/`.
-- One sub-package per area (`core/` here); each module runnable with `python -m orvue_us_inverse.<area>.<module>`;
+- One sub-package per area (`core/`, `simulation/`, `tracking/` ...); each module runnable with `python -m orvue_us_inverse.<area>.<module>`;
   add new steps to `COMMANDS` and `MENU` in `__main__.py`.
+- The copied simulator files are frozen baselines (`simulation/anatomy.py`, `simulation/bmode.py`,
+  `tracking/markers.py` layout constants and `tracking/tracker.py` read-only); log any change in `UPSTREAM.md`.
 - One README.md: add, move or remove the row in "Every file" whenever a tracked file is added, moved or removed.
 - Documentation as PDF built with `reports.pdf_template.Doc` from the code; no Word documents. Keep README, manual
   and CLAUDE.md in step.

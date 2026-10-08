@@ -5,8 +5,9 @@ The package lives in src/orvue_us_inverse/ of the repository and is installed in
 (`pip install -e .`), so REPO_ROOT is the repository folder:
 
     config/settings.json           settings (committed)
-    docs/                          generated PDFs, figures/, images/
-    output/                        generated at run time, not in git: logs/, export/, cache/
+    config/calibration.json        probe calibration (committed, rewritten by the calibration)
+    docs/                          generated PDFs, figures/, images/, print/tracking_board.pdf
+    output/                        generated at run time, not in git: captures/, logs/, export/, viewer3d/, cache/
 """
 import os
 
@@ -17,13 +18,18 @@ LOGO_PATH = os.path.join(ASSETS_DIR, "orvue_logo.jpg")
 REPO_ROOT = os.path.dirname(os.path.dirname(PACKAGE_DIR))
 CONFIG_DIR = os.path.join(REPO_ROOT, "config")
 SETTINGS_PATH = os.path.join(CONFIG_DIR, "settings.json")
+CALIBRATION_PATH = os.path.join(CONFIG_DIR, "calibration.json")
 
 DOCS_DIR = os.path.join(REPO_ROOT, "docs")
 FIGURES_DIR = os.path.join(DOCS_DIR, "figures")
 IMAGES_DIR = os.path.join(DOCS_DIR, "images")
+PRINT_DIR = os.path.join(DOCS_DIR, "print")
 MANUAL_PDF = os.path.join(DOCS_DIR, "Ultrasound Inverse Anatomy Mapping - User Manual.pdf")
+BOARD_PDF = os.path.join(PRINT_DIR, "tracking_board.pdf")
 
 OUTPUT_DIR = os.path.join(REPO_ROOT, "output")
+CAPTURES_DIR = os.path.join(OUTPUT_DIR, "captures")
 LOGS_DIR = os.path.join(OUTPUT_DIR, "logs")
 EXPORT_DIR = os.path.join(OUTPUT_DIR, "export")
+VIEWER3D_OUT_DIR = os.path.join(OUTPUT_DIR, "viewer3d")
 CACHE_DIR = os.path.join(OUTPUT_DIR, "cache")

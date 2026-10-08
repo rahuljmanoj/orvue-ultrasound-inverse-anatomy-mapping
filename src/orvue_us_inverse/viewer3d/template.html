@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Virtual hepatocystic anatomy model for ultrasound-guided laparoscopic cholecystectomy | Orvue Surgical</title>
+<style>
+  :root { --bg: #000; --panel: #101012; --panel2: #1a1b1e; --border: #37373c; --text: #ebebeb; --grey: #aaa;
+          --dim: #6e6e73; --amber: #ffc800; --green: #6ecd5a; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+               font: 13px/1.4 "Segoe UI", system-ui, sans-serif; overflow: hidden; }
+  #header { position: absolute; left: 0; right: 0; top: 0; height: 68px; display: flex; align-items: center;
+            gap: 16px; padding: 0 16px; background: linear-gradient(#0b0c0e, #000); }
+  #header::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
+                   background: linear-gradient(90deg, var(--amber), rgba(255,200,0,.35) 45%, rgba(255,200,0,0) 85%); }
+  #header img { height: 46px; border-radius: 4px; }
+  #header .divider { width: 1px; height: 40px; background: var(--border); }
+  #header .titles { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+  #header h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: .01em; color: #f4f4f4;
+               white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #header .sub { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--grey); }
+  #header .sub b { color: var(--amber); font-weight: 600; }
+  #header .meta { text-align: right; font-size: 11.5px; color: var(--grey); line-height: 1.5; white-space: nowrap; }
+  #casebar { position: absolute; left: 0; right: 300px; top: 68px; height: 34px; display: flex; align-items: center;
+             gap: 12px; padding: 0 16px; background: var(--panel); border-bottom: 1px solid var(--border); }
+  #casebar .cap { margin: 0; }
+  #casebar .case { color: var(--text); font-size: 14px; font-weight: 600; white-space: nowrap; }
+  #casebar .desc { color: var(--grey); font-size: 12.5px; flex: 1; overflow: hidden; text-overflow: ellipsis;
+                   white-space: nowrap; }
+  #view { position: absolute; left: 0; top: 102px; right: 300px; bottom: 0; }
+  #view canvas { position: absolute; left: 0; top: 0; }
+  #overlay { pointer-events: none; }
+  #panel { position: absolute; right: 0; top: 68px; bottom: 0; width: 300px; overflow-y: auto; padding: 14px 14px;
+           background: var(--panel); border-left: 1px solid var(--border); }
+  .cap { color: var(--amber); font-size: 12px; letter-spacing: .05em; margin: 14px 0 6px; }
+  .cap:first-child { margin-top: 0; }
+  select, button { background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+                   border-radius: 3px; padding: 4px 8px; font: inherit; }
+  button { cursor: pointer; }
+  button.on { border-color: var(--amber); color: var(--amber); }
+  .row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+  .row label { flex: 1; cursor: pointer; }
+  .key { display: inline-block; min-width: 18px; padding: 0 5px; border: 1px solid var(--border);
+         border-radius: 3px; background: var(--panel2); color: var(--text); font-size: 11px; text-align: center; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .slider { display: grid; grid-template-columns: 36px 1fr 56px; align-items: center; gap: 6px; margin: 3px 0; }
+  .slider span:last-child { text-align: right; color: var(--grey); }
+  input[type=range] { width: 100%; accent-color: var(--amber); }
+  input[type=checkbox] { accent-color: var(--amber); }
+  #info { position: absolute; right: 312px; bottom: 12px; width: 380px; padding: 10px 12px; background: rgba(16,16,18,.92);
+          border: 1px solid var(--border); border-radius: 4px; display: none; }
+  #info .name { color: var(--amber); font-size: 14px; margin-bottom: 4px; }
+  #info .pt { color: var(--grey); font-size: 12px; margin-top: 6px; }
+  #help { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 520px; padding: 16px 20px;
+          background: rgba(16,16,18,.97); border: 1px solid var(--amber); border-radius: 4px; display: none; }
+  #help table { width: 100%; border-collapse: collapse; }
+  #help td { padding: 3px 4px; color: var(--grey); }
+  #help td:first-child { width: 70px; }
+  #status { position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%); color: var(--grey); }
+  #toast { position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); padding: 8px 14px; display: none;
+           background: var(--panel2); border: 1px solid var(--amber); border-radius: 4px; }
+  .muted { color: var(--grey); font-size: 12px; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+               "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
+</script>
+</head>
+<body>
+<div id="header">
+  <img src="__LOGO__" alt="Orvue Surgical">
+  <div class="divider"></div>
+  <div class="titles">
+    <h1 id="mainTitle">Virtual hepatocystic anatomy model for ultrasound-guided laparoscopic cholecystectomy</h1>
+    <div class="sub"><b>Orvue Surgical</b> &nbsp;&middot;&nbsp; 3D anatomy viewer &nbsp;&middot;&nbsp; Ultrasound imaging simulator</div>
+  </div>
+  <div class="meta"><div id="today"></div><div>Phantom frame, mm</div></div>
+</div>
+<div id="casebar">
+  <span class="cap">CASE</span>
+  <span class="case" id="caseName"></span>
+  <span class="desc" id="caseDesc"></span>
+</div>
+<div id="view"><canvas id="overlay"></canvas><div id="status">Loading anatomy ...</div></div>
+<div id="panel">
+  <div class="cap">CASE</div>
+  <div class="row"><select id="caseSelect" style="flex:1"></select><span class="key">p</span><span class="key">n</span></div>
+  <div class="cap">VIEW</div>
+  <div class="grid" id="presetButtons"></div>
+  <div class="row" style="margin-top:6px"><button id="projBtn" style="flex:1"></button><span class="key">o</span></div>
+  <div class="cap">SHOW</div>
+  <div id="toggleRows"></div>
+  <div class="cap">PROBE PLANE</div>
+  <div class="slider"><span>x</span><input id="px" type="range" min="0" max="100" step="0.5"><span id="pxv"></span></div>
+  <div class="slider"><span>y</span><input id="py" type="range" min="0" max="100" step="0.5"><span id="pyv"></span></div>
+  <div class="slider"><span>yaw</span><input id="pyaw" type="range" min="-180" max="180" step="1"><span id="pyawv"></span></div>
+  <div class="muted">Image plane of the simulator's probe (face at z = 0), same pose convention as
+    pose_from_xy_yaw. Turn on with <span class="key">k</span>.</div>
+  <div class="cap">KEYS</div>
+  <div class="muted"><span class="key">h</span> help &nbsp; <span class="key">s</span> screenshot &nbsp;
+    <span class="key">e</span> export &nbsp; click a structure for details</div>
+</div>
+<div id="info"><div class="name" id="infoName"></div><div id="infoDesc"></div><div class="pt" id="infoPt"></div></div>
+<div id="help"></div>
+<div id="toast"></div>
+<script>window.PAYLOAD = /*__PAYLOAD__*/null;</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const P = window.PAYLOAD;
+const $ = (id) => document.getElementById(id);
+const statusEl = $('status');
+window.addEventListener('error', (e) => { statusEl.textContent = 'Error: ' + e.message; });
+
+// ------------------------------------------------------------------ state (URL hash can preset it)
+const params = new URLSearchParams(location.hash.slice(1));
+const num = (k, d) => (params.has(k) ? parseFloat(params.get(k)) : d);
+const state = {
+  caseIndex: Math.max(0, P.cases.findIndex(c => c.name === (params.get('case') || '__START_CASE__'))),
+  view: params.get('view') || P.default_preset,
+  parallel: params.has('parallel') ? params.get('parallel') !== '0' : P.default_parallel,
+  toggles: {}, selected: null,
+  probe: { x: num('px', 55), y: num('py', 70), yaw: num('pyaw', 0) },
+};
+for (const [k, v] of Object.entries(P.toggles)) state.toggles[k] = params.has(k) ? params.get(k) !== '0' : v[0];
+
+// ------------------------------------------------------------------ renderer, cameras, controls
+const view = $('view');
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.autoClear = false;
+view.insertBefore(renderer.domElement, view.firstChild);
+const overlay = $('overlay');
+const ctx = overlay.getContext('2d');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x060607);
+const target = new THREE.Vector3(...P.target);
+const ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, -3000, 3000);
+const persp = new THREE.PerspectiveCamera(30, 1, 1, 5000);
+const HALF_H = 72;                                   // mm visible above / below the target at zoom 1
+const DIST = 400;
+let camera = state.parallel ? ortho : persp;
+let controls = null;
+scene.add(new THREE.HemisphereLight(0xffffff, 0x404048, 0.9));
+const headlight = new THREE.DirectionalLight(0xffffff, 1.1);
+scene.add(headlight, headlight.target);
+
+function makeControls() {
+  if (controls) controls.dispose();
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.target.copy(target);
+  controls.zoomSpeed = 1.2;
+  controls.update();
+}
+
+function resize() {
+  const w = view.clientWidth, h = view.clientHeight, a = w / h;
+  renderer.setSize(w, h);
+  const dpr = window.devicePixelRatio;
+  overlay.width = w * dpr; overlay.height = h * dpr;
+  overlay.style.width = w + 'px'; overlay.style.height = h + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ortho.left = -HALF_H * a; ortho.right = HALF_H * a; ortho.top = HALF_H; ortho.bottom = -HALF_H;
+  ortho.updateProjectionMatrix();
+  persp.aspect = a; persp.updateProjectionMatrix();
+}
+
+function applyPreset(id) {
+  const p = P.presets[id];
+  state.view = id;
+  const off = new THREE.Vector3(...p.offset).normalize();
+  for (const cam of [ortho, persp]) {
+    cam.up.set(...p.up);
+    const d = cam === persp ? HALF_H / Math.tan(THREE.MathUtils.degToRad(persp.fov / 2)) : DIST;
+    cam.position.copy(target).addScaledVector(off, d);
+    cam.lookAt(target);
+  }
+  ortho.zoom = 1; ortho.updateProjectionMatrix();
+  makeControls();
+  updatePanel();
+}
+
+function setProjection(parallel) {
+  const from = camera, to = parallel ? ortho : persp;
+  if (from !== to) {
+    const dir = from.position.clone().sub(controls.target).normalize();
+    to.up.copy(from.up);
+    const t = THREE.MathUtils.degToRad(persp.fov / 2);
+    if (parallel) {                                   // keep the visible height
+      const halfVisible = from.position.distanceTo(controls.target) * Math.tan(t);
+      ortho.zoom = HALF_H / halfVisible; ortho.updateProjectionMatrix();
+      to.position.copy(controls.target).addScaledVector(dir, DIST);
+    } else {
+      const halfVisible = HALF_H / ortho.zoom;
+      to.position.copy(controls.target).addScaledVector(dir, halfVisible / Math.tan(t));
+    }
+    to.lookAt(controls.target);
+    const tgt = controls.target.clone();
+    camera = to;
+    makeControls();
+    controls.target.copy(tgt); controls.update();
+  }
+  state.parallel = parallel;
+  updatePanel();
+}
+
+// ------------------------------------------------------------------ mesh decoding
+async function inflate(b64, Type) {
+  const bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  const stream = new Blob([bin]).stream().pipeThrough(new DecompressionStream('deflate'));
+  return new Type(await new Response(stream).arrayBuffer());
+}
+const geomCache = {};
+async function geometryFor(key) {
+  if (geomCache[key]) return geomCache[key];
+  const m = P.meshes[key];
+  const q = await inflate(m.pos, Uint16Array);
+  const pos = new Float32Array(m.nv * 3);
+  for (let i = 0; i < m.nv; i++) for (let k = 0; k < 3; k++) pos[3 * i + k] = m.lo[k] + q[3 * i + k] * m.scale[k];
+  const idx = await inflate(m.idx, m.idx32 ? Uint32Array : Uint16Array);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setIndex(new THREE.BufferAttribute(idx, 1));
+  g.computeVertexNormals();
+  g.computeBoundingSphere();
+  return (geomCache[key] = g);
+}
+
+// ------------------------------------------------------------------ static scene parts
+const caseGroup = new THREE.Group(), surfaceGroup = new THREE.Group(), probeGroup = new THREE.Group();
+scene.add(caseGroup, surfaceGroup, probeGroup);
+const [RX, RY, RZ] = P.region;
+{
+  const plane = new THREE.Mesh(new THREE.PlaneGeometry(RX, RY),
+    new THREE.MeshBasicMaterial({ color: 0xbfc4cc, transparent: true, opacity: 0.08, side: THREE.DoubleSide,
+                                  depthWrite: false }));
+  plane.position.set(RX / 2, RY / 2, 0);
+  plane.renderOrder = 5;
+  const rect = (z, colour, opacity) => new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(
+      [[0, 0], [RX, 0], [RX, RY], [0, RY]].map(([x, y]) => new THREE.Vector3(x, y, z))),
+    new THREE.LineBasicMaterial({ color: colour, transparent: opacity < 1, opacity }));
+  const box = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(RX, RY, RZ)),
+    new THREE.LineBasicMaterial({ color: 0x55555c, transparent: true, opacity: 0.6 }));
+  box.position.set(RX / 2, RY / 2, RZ / 2);
+  surfaceGroup.add(plane, rect(0, 0xffc800, 1), box);
+}
+
+function poseFromXYYaw(x, y, yawDeg) {         // same as BModeSimulator.pose_from_xy_yaw (columns u, v, n, origin)
+  const a = THREE.MathUtils.degToRad(yawDeg), c = Math.cos(a), s = Math.sin(a);
+  return [[c, -s, 0, x], [s, c, 0, y], [0, 0, 1, 0], [0, 0, 0, 1]];
+}
+function planeMesh(T, width = P.probe.width, depth = P.probe.depth) {   // mirrors geometry.plane_mesh
+  const col = (j) => new THREE.Vector3(T[0][j], T[1][j], T[2][j]);
+  const o = col(3), u = col(0), n = col(2), hw = width / 2;
+  const v = [o.clone().addScaledVector(u, -hw), o.clone().addScaledVector(u, hw),
+             o.clone().addScaledVector(u, hw).addScaledVector(n, depth), o.clone().addScaledVector(u, -hw).addScaledVector(n, depth)];
+  const g = new THREE.BufferGeometry().setFromPoints(v);
+  g.setIndex([0, 1, 2, 0, 2, 3]);
+  return g;
+}
+function updateProbe() {
+  probeGroup.clear();
+  const T = poseFromXYYaw(state.probe.x, state.probe.y, state.probe.yaw);
+  const g = planeMesh(T);
+  probeGroup.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0x40c8ff, transparent: true, opacity: 0.22,
+    side: THREE.DoubleSide, depthWrite: false })));
+  const pts = Array.from({ length: 4 }, (_, i) => new THREE.Vector3().fromBufferAttribute(g.attributes.position, i));
+  probeGroup.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({ color: 0x40c8ff })));
+  const dot = new THREE.Mesh(new THREE.SphereGeometry(1.2, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffc800 }));
+  dot.position.copy(pts[0]);                      // probe -x end = image left = screen dot
+  probeGroup.add(dot);
+  $('pxv').textContent = state.probe.x.toFixed(1) + ' mm';
+  $('pyv').textContent = state.probe.y.toFixed(1) + ' mm';
+  $('pyawv').textContent = state.probe.yaw.toFixed(0) + '°';
+}
+
+// ------------------------------------------------------------------ case meshes and visibility
+const meshes = {};
+async function loadCase(i) {
+  state.caseIndex = (i + P.cases.length) % P.cases.length;
+  const c = P.cases[state.caseIndex];
+  statusEl.style.display = 'block'; statusEl.textContent = 'Loading ' + c.name + ' ...';
+  for (const m of caseGroup.children) m.material.dispose();
+  caseGroup.clear();
+  for (const k of Object.keys(meshes)) delete meshes[k];
+  for (const s of c.structures) {
+    const g = await geometryFor(s.mesh);
+    const mat = new THREE.MeshPhongMaterial({ color: new THREE.Color(s.colour), shininess: 25 });
+    const mesh = new THREE.Mesh(g, mat);
+    mesh.userData = s;
+    mesh.renderOrder = s.kind === 'liver' || s.kind === 'fat' ? 3 : (s.part === 'lumen' ? 0 : 1);
+    meshes[s.id] = mesh;
+    caseGroup.add(mesh);
+  }
+  state.selected = null; $('info').style.display = 'none';
+  $('caseName').textContent = c.name.replace(/_/g, ' ');
+  $('caseDesc').textContent = c.description;
+  $('caseSelect').value = c.name;
+  applyVisibility();
+  statusEl.style.display = 'none';
+  document.body.dataset.ready = '1';
+}
+
+function applyVisibility() {
+  const t = state.toggles;
+  for (const m of Object.values(meshes)) {
+    const s = m.userData, mat = m.material;
+    let visible = true, opacity = s.opacity, colour = new THREE.Color(s.colour);
+    if (s.kind === 'liver') visible = t.liver;
+    else if (s.kind === 'fat') visible = t.fat;
+    else if (s.kind === 'calot') visible = t.calot;
+    else if (s.kind === 'tube' && s.part === 'lumen') {        // contents (bile / blood), seen through the wall
+      visible = t.lumens; opacity = 0.6; colour.lerp(new THREE.Color(0xffffff), 0.25);
+    }
+    else if (s.kind === 'tube') {
+      if (t.lumens) opacity = 0.18;
+      else if (s.name === 'gallbladder') opacity = t.gb_translucent ? s.opacity : 1;
+    }
+    m.visible = visible;
+    mat.color.copy(colour);
+    const sel = state.selected === s.name;
+    mat.emissive.copy(sel ? new THREE.Color(s.colour).multiplyScalar(0.55) : new THREE.Color(0x000000));
+    if (sel) opacity = Math.min(1, opacity + 0.3);
+    mat.opacity = opacity;
+    mat.transparent = opacity < 0.999;
+    mat.depthWrite = !mat.transparent;
+    mat.side = mat.transparent || s.kind === 'calot' ? THREE.DoubleSide : THREE.FrontSide;
+    mat.needsUpdate = true;
+  }
+  surfaceGroup.visible = t.surface;
+  probeGroup.visible = t.probe;
+  updatePanel();
+}
+
+// ------------------------------------------------------------------ overlay: labels and orientation marker
+const axesScene = new THREE.Scene();
+const AXES = [
+  { dir: [1, 0, 0], colour: 0xff5a50, text: "+x  medial / patient's left" },
+  { dir: [0, 1, 0], colour: 0x6ecd5a, text: '+y  caudal' },
+  { dir: [0, 0, 1], colour: 0x40a8ff, text: '+z  posterior / depth' },
+];
+for (const a of AXES) axesScene.add(new THREE.ArrowHelper(new THREE.Vector3(...a.dir), new THREE.Vector3(), 1, a.colour, 0.28, 0.14));
+const axesCam = new THREE.OrthographicCamera(-1.9, 1.9, 1.9, -1.9, -10, 10);
+const INSET = 190;
+
+function screenOf(p, cam, w, h) {
+  const v = new THREE.Vector3(...p).project(cam);
+  return { x: (v.x + 1) / 2 * w, y: (1 - v.y) / 2 * h, z: v.z };
+}
+
+function drawLabels(w, h) {
+  const seen = new Set(), items = [];
+  for (const m of Object.values(meshes)) {
+    const s = m.userData;
+    if (!m.visible || s.part === 'lumen' || seen.has(s.name)) continue;
+    seen.add(s.name);
+    const p = screenOf(s.anchor, camera, w, h);
+    if (p.z > 1 || p.x < 0 || p.x > w || p.y < 0 || p.y > h) continue;
+    items.push({ s, ax: p.x, ay: p.y });
+  }
+  ctx.font = '12px "Segoe UI", system-ui, sans-serif';
+  const placed = [];
+  const cx = w / 2, cy = h / 2;
+  items.sort((a, b) => a.ay - b.ay);
+  for (const it of items) {
+    let dx = it.ax - cx, dy = it.ay - cy;
+    const L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L;
+    const tw = ctx.measureText(it.s.pretty).width + 12, th = 18;
+    let lx = it.ax + dx * 70 + (dx < 0 ? -tw : 0), ly = it.ay + dy * 45 - th / 2;
+    const hit = (bx, by) => placed.some(b => bx < b.x + b.w + 4 && bx + tw + 4 > b.x && by < b.y + b.h + 2 && by + th + 2 > b.y);
+    for (let k = 0; k < 40 && hit(lx, ly); k++) ly += (k % 2 ? -1 : 1) * 20 * (k + 1);
+    lx = Math.min(Math.max(lx, 4), w - tw - 4); ly = Math.min(Math.max(ly, 4), h - th - 4);
+    placed.push({ x: lx, y: ly, w: tw, h: th });
+    const ex = lx + (lx + tw / 2 < it.ax ? tw : 0), ey = ly + th / 2;
+    const c = new THREE.Color(it.s.colour).lerp(new THREE.Color(0xffffff), 0.35).getStyle();
+    ctx.strokeStyle = c; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(it.ax, it.ay); ctx.lineTo(ex, ey); ctx.stroke();
+    ctx.fillStyle = c; ctx.beginPath(); ctx.arc(it.ax, it.ay, 2.5, 0, 2 * Math.PI); ctx.fill();
+    ctx.fillStyle = 'rgba(10,10,12,0.85)'; ctx.fillRect(lx, ly, tw, th);
+    ctx.strokeStyle = c; ctx.strokeRect(lx + 0.5, ly + 0.5, tw - 1, th - 1);
+    ctx.fillStyle = '#ebebeb'; ctx.fillText(it.s.pretty, lx + 6, ly + 13);
+  }
+}
+
+function drawAxesLabels(w, h) {
+  ctx.font = '12px "Segoe UI", system-ui, sans-serif';
+  const viewDir = camera.position.clone().sub(controls.target).normalize();      // towards the viewer
+  let extra = 0;
+  for (const a of AXES) {
+    const along = new THREE.Vector3(...a.dir).dot(viewDir);
+    const tw0 = ctx.measureText(a.text).width;
+    let x, y, text = a.text;
+    if (Math.abs(along) > 0.9) {                     // axis points into / out of the screen: list it below
+      text += along > 0 ? '  (out of the screen)' : '  (into the screen)';
+      x = 12; y = h - INSET - 18 - 18 * extra++;      // above the marker, clear of the arrows
+    } else {
+      const p = screenOf(a.dir.map(v => v * 1.18), axesCam, INSET, INSET);
+      x = 10 + p.x; y = h - INSET - 10 + p.y;
+      x = x - (x < 10 + INSET / 2 ? tw0 : 0);
+    }
+    const tw = ctx.measureText(text).width;
+    const lx = Math.min(Math.max(x, 4), w - tw - 4);
+    ctx.fillStyle = 'rgba(6,6,7,0.8)'; ctx.fillRect(lx - 3, y - 11, tw + 6, 16);
+    ctx.fillStyle = new THREE.Color(a.colour).getStyle(); ctx.fillText(text, lx, y + 1);
+  }
+  ctx.fillStyle = '#6e6e73'; ctx.fillText(P.presets[state.view] && camera.up ? (state.parallel ? 'parallel' : 'perspective') + ' projection' : '', 12, h - 6);
+}
+
+// ------------------------------------------------------------------ render loop
+function render() {
+  requestAnimationFrame(render);
+  const w = view.clientWidth, h = view.clientHeight;
+  controls.update();
+  headlight.position.copy(camera.position); headlight.target.position.copy(controls.target);
+  renderer.setScissorTest(false);
+  renderer.setViewport(0, 0, w, h);
+  renderer.clear();
+  renderer.render(scene, camera);
+  const dir = camera.position.clone().sub(controls.target).normalize();
+  axesCam.position.copy(dir.multiplyScalar(5)); axesCam.up.copy(camera.up); axesCam.lookAt(0, 0, 0);
+  renderer.setScissorTest(true);
+  renderer.setScissor(10, 10, INSET, INSET); renderer.setViewport(10, 10, INSET, INSET);
+  renderer.clearDepth();
+  renderer.render(axesScene, axesCam);
+  renderer.setScissorTest(false);
+  ctx.clearRect(0, 0, w, h);
+  if (state.toggles.labels) drawLabels(w, h);
+  drawAxesLabels(w, h);
+}
+
+// ------------------------------------------------------------------ picking
+const raycaster = new THREE.Raycaster();
+let down = null;
+renderer.domElement.addEventListener('pointerdown', (e) => { down = [e.clientX, e.clientY]; });
+renderer.domElement.addEventListener('pointerup', (e) => {
+  if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
+  const r = renderer.domElement.getBoundingClientRect();
+  raycaster.setFromCamera(new THREE.Vector2((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1), camera);
+  const hits = raycaster.intersectObjects(Object.values(meshes).filter(m => m.visible), false);
+  const hit = hits.find(h => !['liver', 'fat'].includes(h.object.userData.kind)) || hits[0];
+  if (!hit) { state.selected = null; $('info').style.display = 'none'; applyVisibility(); return; }
+  const s = hit.object.userData, p = hit.point;
+  state.selected = s.name;
+  $('infoName').textContent = s.pretty;
+  $('infoDesc').textContent = s.desc;
+  $('infoPt').textContent = `Clicked point: x ${p.x.toFixed(1)}, y ${p.y.toFixed(1)}, z ${p.z.toFixed(1)} mm` +
+                            (s.part === 'lumen' ? '  (lumen surface)' : '');
+  $('info').style.display = 'block';
+  applyVisibility();
+});
+
+// ------------------------------------------------------------------ panel, help, keys
+function updatePanel() {
+  for (const b of document.querySelectorAll('#presetButtons button')) b.classList.toggle('on', b.dataset.id === state.view);
+  $('projBtn').textContent = state.parallel ? 'Parallel projection' : 'Perspective projection';
+  for (const [k] of Object.entries(P.toggles)) { const cb = $('t_' + k); if (cb) cb.checked = state.toggles[k]; }
+}
+function buildPanel() {
+  for (const c of P.cases) {
+    const o = document.createElement('option'); o.value = c.name; o.textContent = c.name.replace(/_/g, ' ');
+    $('caseSelect').appendChild(o);
+  }
+  $('caseSelect').onchange = (e) => loadCase(P.cases.findIndex(c => c.name === e.target.value));
+  for (const [id, p] of Object.entries(P.presets)) {
+    const b = document.createElement('button'); b.dataset.id = id; b.textContent = `${id}  ${p.name}`;
+    b.onclick = () => applyPreset(id); $('presetButtons').appendChild(b);
+  }
+  $('projBtn').onclick = () => setProjection(!state.parallel);
+  for (const [k, [, key, label]] of Object.entries(P.toggles)) {
+    const row = document.createElement('div'); row.className = 'row';
+    row.innerHTML = `<input type="checkbox" id="t_${k}"><label for="t_${k}">${label}</label><span class="key">${key}</span>`;
+    $('toggleRows').appendChild(row);
+    row.querySelector('input').onchange = (e) => { state.toggles[k] = e.target.checked; applyVisibility(); };
+  }
+  for (const [k, el] of [['x', 'px'], ['y', 'py'], ['yaw', 'pyaw']]) {
+    $(el).value = state.probe[k];
+    $(el).oninput = (e) => { state.probe[k] = parseFloat(e.target.value); updateProbe(); };
+  }
+  const rows = [['1 - 4', 'camera presets: ' + Object.values(P.presets).map(p => p.name).join(', ')],
+                ['o', 'parallel / perspective projection'], ['n / p', 'next / previous case'],
+                ...Object.values(P.toggles).map(([, key, label]) => [key, 'toggle: ' + label]),
+                ['s', 'screenshot (PNG, with labels)'], ['e', 'export meshes (STL + VTP): shows the command'],
+                ['h', 'show / hide this help'], ['mouse', 'left drag rotate, right drag pan, wheel zoom, click = details']];
+  $('help').innerHTML = '<div class="cap">KEYS</div><table>' +
+    rows.map(([k, d]) => `<tr><td><span class="key">${k}</span></td><td>${d}</td></tr>`).join('') + '</table>';
+}
+
+function toast(msg, ms = 6000) {
+  const t = $('toast'); t.textContent = msg; t.style.display = 'block';
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => (t.style.display = 'none'), ms);
+}
+function saveScreenshot() {
+  // the 3D view with labels, under a title band (logo, title, case) so shared images are self-explanatory
+  const src = renderer.domElement, dpr = window.devicePixelRatio, band = Math.round(64 * dpr);
+  const c = document.createElement('canvas');
+  c.width = src.width; c.height = src.height + band;
+  const g = c.getContext('2d');
+  g.fillStyle = '#000'; g.fillRect(0, 0, c.width, band);
+  const grad = g.createLinearGradient(0, 0, c.width, 0);
+  grad.addColorStop(0, '#ffc800'); grad.addColorStop(0.45, 'rgba(255,200,0,0.35)'); grad.addColorStop(0.85, 'rgba(255,200,0,0)');
+  g.fillStyle = grad; g.fillRect(0, band - 2 * dpr, c.width, 2 * dpr);
+  const logo = document.querySelector('#header img');
+  let x = 14 * dpr;
+  if (logo && logo.complete && logo.naturalWidth) {
+    const lh = 44 * dpr, lw = lh * logo.naturalWidth / logo.naturalHeight;
+    g.drawImage(logo, x, (band - lh) / 2, lw, lh); x += lw + 14 * dpr;
+  }
+  g.fillStyle = '#f4f4f4'; g.font = `600 ${17 * dpr}px "Segoe UI", system-ui, sans-serif`;
+  g.fillText($('mainTitle').textContent, x, 27 * dpr);
+  const c0 = P.cases[state.caseIndex];
+  g.font = `${12 * dpr}px "Segoe UI", system-ui, sans-serif`;
+  g.fillStyle = '#ffc800'; g.fillText('ORVUE SURGICAL', x, 48 * dpr);
+  const w0 = g.measureText('ORVUE SURGICAL').width;
+  g.fillStyle = '#aaaaaa';
+  g.fillText(`  ·  Case: ${c0.name.replace(/_/g, ' ')}  ·  ${P.presets[state.view].name}`, x + w0, 48 * dpr);
+  g.drawImage(src, 0, band); g.drawImage(overlay, 0, band, src.width, src.height);
+  const a = document.createElement('a');
+  a.download = `anatomy_${P.cases[state.caseIndex].name}_${Date.now()}.png`;
+  a.href = c.toDataURL('image/png'); a.click();
+}
+function exportHint() {
+  const cmd = `python -m orvue_us_inverse.viewer3d --case ${P.cases[state.caseIndex].name} --export`;
+  try { navigator.clipboard.writeText(cmd); } catch (e) { /* file:// may refuse */ }
+  toast('Export (STL + VTP, full quality) runs in Python: ' + cmd + '   (copied to the clipboard when allowed)', 9000);
+}
+
+const keyToggles = Object.fromEntries(Object.entries(P.toggles).map(([k, v]) => [v[1], k]));
+window.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'SELECT' || e.ctrlKey || e.altKey || e.metaKey) return;
+  const k = e.key.toLowerCase();
+  if (P.presets[k]) applyPreset(k);
+  else if (k === 'o') setProjection(!state.parallel);
+  else if (k === 'n') loadCase(state.caseIndex + 1);
+  else if (k === 'p') loadCase(state.caseIndex - 1);
+  else if (k === 'h') $('help').style.display = $('help').style.display === 'block' ? 'none' : 'block';
+  else if (k === 's') saveScreenshot();
+  else if (k === 'e') exportHint();
+  else if (keyToggles[k]) { state.toggles[keyToggles[k]] = !state.toggles[keyToggles[k]]; applyVisibility(); }
+  else return;
+  e.preventDefault();
+});
+
+// ------------------------------------------------------------------ start
+$('today').textContent = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+buildPanel();
+resize();
+window.addEventListener('resize', resize);
+if (!state.parallel) camera = persp;
+applyPreset(state.view);
+updateProbe();
+if (params.get('help') === '1') $('help').style.display = 'block';
+await loadCase(state.caseIndex);
+render();
+</script>
+</body>
+</html>
