@@ -4,7 +4,7 @@ State of the inverse-mapping project. Updated at the end of every session (plan:
 
 | | |
 |---|---|
-| Repository | rahuljmanoj/orvue-ultrasound-inverse-anatomy-mapping, `main` after the S7 + clinical-version merge (PR #13); review fixes on branch `s7` (2026-10-09, not merged) |
+| Repository | rahuljmanoj/orvue-ultrasound-inverse-anatomy-mapping, `main` after the S7 + clinical-version merge (PR #13) and the review-fix merge (branch `s7`, 2026-10-09) |
 | Simulator code | copied in from rahuljmanoj/orvue-ultrasound-simulator `e789389`; frozen; see `UPSTREAM.md` |
 | Environment | conda env `orvue-robot`, Python 3.11.16 (`C:/Users/rahul/miniconda3/envs/orvue-robot/python.exe`); import check passed (Prep P2) |
 | Last update | 2026-10-09, after S7 and the clinical version |
