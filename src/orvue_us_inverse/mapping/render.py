@@ -7,6 +7,7 @@ orvue_us_inverse.mapping.render - views of the reconstruction: slices, surfaces,
     snapshot_3d(meshes, "snap.png", gt=gt_meshes)   # matplotlib (Agg) off-screen PNG
     export_stl(meshes, folder)                      # one binary STL per group
     write_browser_view(meshes, "recon.html", gt=gt_meshes)   # page of the 3D anatomy viewer (three.js)
+    class App(Recon3DOutputs): ...                             # gt, meshes, export_3d, browser_view, live 3D
 
 Slice colours (BGR from the hex values): bile lumen 3 green #639922, arterial blood 7 red #E24B4A, venous blood 9 blue
 #378ADD, stone 4 amber #FAC775, lymph node 10 purple #AFA9EC; liver, fat and the walls in muted greys; unobserved
@@ -22,6 +23,7 @@ import cv2
 import numpy as np
 
 from orvue_us_inverse.mapping.recon import VoxelGrid
+from orvue_us_inverse.paths import EXPORT_DIR, RESULTS_DIR, VIEWER3D_OUT_DIR
 from orvue_us_inverse.ui import clinical as ui
 
 
@@ -311,3 +313,64 @@ def write_browser_view(meshes: dict, path: str, gt: dict | None = None, title: s
 
     start = "reconstruction_vs_truth" if gt else "reconstruction"
     return v3d.write_html(path, browser_payload(meshes, gt, title), start_case=start)
+
+# ---------------------------------------------------------------- 3D outputs shared by the apps
+class Recon3DOutputs:
+    """Mixin for the sweep apps (ScriptedPlayback, MouseSession): ground truth, surfaces, 3D snapshot + STL, browser
+    page and the optional live PyVista window. Needs the attributes sim, grid, case, comp (LabelCompounder), acq
+    (Acquirer), slice_view (SliceView), message, _gt and _gt_meshes (None at start)."""
+
+    def gt_volume(self) -> np.ndarray:
+        from orvue_us_inverse.mapping.recon import ground_truth
+        if self._gt is None:
+            self._gt = ground_truth(self.sim.an, self.grid)
+        return self._gt
+
+    def gt_meshes(self) -> dict:
+        if self._gt_meshes is None:
+            self._gt_meshes = surface_meshes(self.gt_volume(), self.grid)
+        return self._gt_meshes
+
+    def meshes(self) -> dict:
+        return surface_meshes(self.comp.result(), self.grid)
+
+    def toggle_gt_contours(self) -> None:
+        v = self.slice_view
+        if v.gt is None:
+            v.gt, v.show_gt = self.gt_volume(), True
+        else:
+            v.show_gt = not v.show_gt
+
+    def export_3d(self, results: str = RESULTS_DIR, export: str = EXPORT_DIR) -> tuple[str, list[str]]:
+        """3D snapshot PNG (ground truth translucent) and one STL per structure; returns (png, stl paths)."""
+        import time
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        meshes = self.meshes()
+        title = f"{self.case}: {len(self.acq.sweep)} frames, reconstruction (solid) vs ground truth (translucent)"
+        png = snapshot_3d(meshes, os.path.join(results, f"snapshot_{self.case}_{stamp}.png"), gt=self.gt_meshes(),
+                          title=title)
+        stls = export_stl(meshes, os.path.join(export, f"recon_{self.case}_{stamp}"))
+        self.message = f"3D snapshot {os.path.basename(png)}; {len(stls)} STL files in output/export/"
+        return png, stls
+
+    def browser_view(self, folder: str = VIEWER3D_OUT_DIR) -> str:
+        path = write_browser_view(self.meshes(), os.path.join(folder, f"recon_{self.case}.html"), gt=self.gt_meshes(),
+                                  title=f"{self.case}, {len(self.acq.sweep)} frames")
+        self.message = f"browser view {os.path.basename(path)}"
+        return path
+
+    def open_live3d(self):
+        """Live PyVista window (mapping.live3d.Live3D), or None with a message when PyVista / VTK cannot be used."""
+        try:
+            from orvue_us_inverse.mapping.live3d import Live3D
+            live = Live3D()
+            self.update_live3d(live)
+            self.message = "live 3D window open (p closes it)"
+            return live
+        except Exception as e:                       # ImportError, blocked DLL, no OpenGL ...
+            self.message = f"live 3D window not available ({type(e).__name__}: {e}); use 3 or b"
+            print(f"[live3d] {self.message}", flush=True)
+            return None
+
+    def update_live3d(self, live) -> None:
+        live.update(self.meshes(), gt=self.gt_meshes() if self.slice_view.show_gt else None)

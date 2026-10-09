@@ -296,6 +296,27 @@ def structure_chart(report: dict, path: str) -> str:
     return path
 
 
+def complete_report(raw: np.ndarray, anatomy, grid: VoxelGrid, folder: str, case: str, gt: np.ndarray | None = None,
+                    instances: dict | None = None, fill: bool = True, max_gap: int = 1, extra: dict | None = None,
+                    title: str = "", slice_view=None) -> tuple[Evaluation, np.ndarray]:
+    """The "complete" step shared by the apps: fill small holes, evaluate, write the report folder; with a
+    render.SliceView, switch it to error colouring and save slices_errors.png first. Returns (evaluation, labels)."""
+    import cv2
+    from orvue_us_inverse.mapping.recon import fill_small_holes
+
+    labels = fill_small_holes(raw, max_gap) if fill else raw
+    gt = ground_truth(anatomy, grid) if gt is None else gt
+    extra = dict(extra or {}, fill=fill, max_gap=max_gap if fill else 0,
+                 observed_fraction_before_fill=float((raw >= 0).mean()))
+    ev = evaluate(labels, anatomy, grid, gt=gt, instances=instances, case=case, extra=extra)
+    os.makedirs(folder, exist_ok=True)
+    if slice_view is not None:
+        slice_view.gt, slice_view.errors = gt, True
+        cv2.imwrite(os.path.join(folder, "slices_errors.png"), slice_view.update(labels))
+    write_report(ev, folder, title=title)
+    return ev, labels
+
+
 def write_report(ev: Evaluation, folder: str, title: str = "") -> str:
     """report.json, report.md, overlay_3d.png and structures.png in folder; returns the folder."""
     os.makedirs(folder, exist_ok=True)

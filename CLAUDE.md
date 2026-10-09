@@ -34,7 +34,7 @@ tests/                       test_template.py, test_standalone.py, test_anatomy.
                              helpers/synthetic_scene.py, mapping/test_probe.py,
                              mapping/test_sweep_io.py, mapping/test_poses_acquisition.py,
                              mapping/test_run_scripted.py, mapping/test_recon.py, mapping/test_render.py,
-                             mapping/test_evaluate.py, mapping/test_experiments.py
+                             mapping/test_evaluate.py, mapping/test_experiments.py, mapping/test_mouse.py
 output/                      run-time output, gitignored: captures/, logs/, export/, viewer3d/, cache/, sweeps/,
                              results/
 PLAN_inverse_mapping.md      session plan for the inverse mapping
@@ -52,7 +52,7 @@ UPSTREAM.md                  origin of the copied simulator code and its change 
   CACHE_DIR, SWEEPS_DIR, RESULTS_DIR, EXPERIMENTS_CACHE_DIR.
 - `core/example.py`: example area module (`load_settings`, `scaled`, `main`).
 - `mapping/`: inverse mapping (see Inverse mapping): `probe.py`, `config.py`, `sweep_io.py`, `poses.py`,
-  `acquisition.py`, `recon.py`, `render.py`, `live3d.py` (optional PyVista), `evaluate.py`, app `run_scripted.py`,
+  `acquisition.py`, `recon.py`, `render.py`, `live3d.py` (optional PyVista), `evaluate.py`, apps `run_scripted.py`, `run_mouse.py`,
   `experiments.py`, scripts `reconstruct_sweep.py`, `evaluate_sweep.py`, `run_experiments.py`; placeholder
   `errors.py`.
 - Copied from the simulator (`UPSTREAM.md`):
@@ -219,24 +219,27 @@ caterpillar_hump, inflamed_obese (5 mm GB wall, 9 mm fat, impacted Hartmann ston
   | `probe.py` | Probe, `make_simulator`, probe metadata | Prep |
   | `config.py` | `GridConfig` (x, y 0-100, z 0-50 mm, 0.5 mm voxels -> shape (200, 200, 100) indexed [ix, iy, iz], voxel i centred at lo + (i + 0.5) * voxel), `SweepConfig` (yaw list, overlap %, spacing, angle trigger, speed, serpentine, region; probe width / depth from `PROBE`), `AcquisitionConfig` (`store_images`) | S0 |
   | `sweep_io.py` | `FrameRecord` (index, t, T_true, T_measured, int8 labels, uint8 image or None), `Sweep` (metadata + frames; `save` / `load` .npz), `make_metadata`, `estimate_size_mb` | S0 |
-  | `poses.py` | `ScriptedSweep(cfg)`: lanes (`Lane`, `planned_lanes()`), `segments` (lanes + unrecorded transitions), `samples(step_mm=0.05)` / `pose_at(t)` -> `Sample(t, T, recording, lane)`, `lane_at(t)`, `expected_frames()`, `coverage()`, `summary()`; mouse (S6), camera (S7) | S1 |
-  | `acquisition.py` | `Acquirer(sim, sweep_cfg, acq_cfg)`: `feed(T, t, recording)` -> `FrameRecord` or None; `.sweep` | S1 |
+  | `poses.py` | `ScriptedSweep(cfg)`: lanes (`Lane`, `planned_lanes()`), `segments` (lanes + unrecorded transitions), `samples(step_mm=0.05)` / `pose_at(t)` -> `Sample(t, T, recording, lane)`, `lane_at(t)`, `expected_frames()`, `coverage()`, `summary()` (S1); `MousePose(clock)`: `move`, `press` / `release` (= recording), `rotate(sign)` 5 deg / `snap(yaw)` (any time, also during a stroke), `speed_mm_s()`, `sample()` (S6); camera (S7) | S1, S6 |
+  | `acquisition.py` | `Acquirer(sim, sweep_cfg, acq_cfg)`: `feed(T, t, recording)` -> `FrameRecord` or None; `.sweep`; `truncate(n)` (undo) | S1 |
   | `run_scripted.py` | App `python -m orvue_us_inverse.mapping.run_scripted` (menu step `scripted`); `ScriptedPlayback` holds the state and draws without windows | S1 |
-  | `recon.py` | `VoxelGrid` (`index`, `flat_index`, `centre`, `centre_points`), `pixel_points(T, probe, elev_mm)` (= `plane_points`, exact), `LabelCompounder(grid, n_classes=11, probe, splat_mm=0)` (`from_sweep`, `insert`, `insert_batch`, `result`, `intensity`, `observed`), `fill_small_holes(labels, max_gap_voxels=1)`, `ground_truth`, `interior_mask` | S2 |
+  | `recon.py` | `VoxelGrid` (`index`, `flat_index`, `centre`, `centre_points`), `pixel_points(T, probe, elev_mm)` (= `plane_points`, exact), `LabelCompounder(grid, n_classes=11, probe, splat_mm=0)` (`from_sweep`, `insert`, `insert_batch`, `remove_batch` (undo), `result`, `result_slice`, `column_hits`, `intensity`, `observed`), `fill_small_holes(labels, max_gap_voxels=1)`, `ground_truth`, `interior_mask` | S2 |
   | `reconstruct_sweep.py` | Script `python -m orvue_us_inverse.mapping.reconstruct_sweep [sweep.npz]` (menu step `recon`; newest sweep by default) | S2 |
-  | `render.py` | `SliceView(grid, crosshair, gt)` (`update(comp or volume)`, `click`, `move`; layout xy left, xz / yz right), `surface_meshes(labels, grid)` (marching cubes per `GROUPS`: bile, arterial / venous blood, stone, lymph node; 5 Taubin iterations; clamped to the grid), `snapshot_3d` (matplotlib Agg), `export_stl`, `browser_payload` / `write_browser_view` (viewer3d page, cases reconstruction / reconstruction_vs_truth / ground_truth) | S3 |
-  | `live3d.py` | `Live3D` PyVista window (`update(meshes, gt)`, `process()`, `closed`, `screenshot`); optional extra `view3d` | S3 |
-  | `evaluate.py` | `instance_masks(an, grid)` (tube lumen sd < 0 / wall 0 <= sd < wall, blob interior; flat indices), `evaluate(labels, an, grid, gt, instances, case, extra)` -> `Evaluation(report, ...)`, `surface_distances`, `summary_table`, `write_report(ev, folder)` (report.json, report.md, overlay_3d.png, structures.png), `overlay_3d`, `structure_chart` | S4 |
+  | `render.py` | `SliceView(grid, crosshair, gt)` (`update(comp or volume)`, `click`, `move`; layout xy left, xz / yz right), `surface_meshes(labels, grid)` (marching cubes per `GROUPS`: bile, arterial / venous blood, stone, lymph node; 5 Taubin iterations; clamped to the grid), `snapshot_3d` (matplotlib Agg), `export_stl`, `browser_payload` / `write_browser_view` (viewer3d page, cases reconstruction / reconstruction_vs_truth / ground_truth); `Recon3DOutputs` mixin for the apps (`gt_volume`, `gt_meshes`, `meshes`, `toggle_gt_contours`, `export_3d`, `browser_view`, `open_live3d`, `update_live3d`) | S3, S6 |
+  | `live3d.py` | `Live3D` PyVista window (`update(meshes, gt)`, `process()`, `closed`, `screenshot`); `Embedded3D` off-screen view for a panel (`image()` BGR, `orbit(dx, dy)`, `zoom(f)`); `VIEWS` presets isometric (x right, y towards the viewer, depth down) / top / axial (from the feet, patient R on the left) / sagittal (from the patient's right), `set_view`; face labels patient R / L, cranial / caudal, anterior / posterior shown when edge-on or obliquely in front (`visible_labels`), triad L / Ca / P; optional extra `view3d` | S3, S6 |
+  | `evaluate.py` | `instance_masks(an, grid)` (tube lumen sd < 0 / wall 0 <= sd < wall, blob interior; flat indices), `evaluate(labels, an, grid, gt, instances, case, extra)` -> `Evaluation(report, ...)`, `surface_distances`, `summary_table`, `write_report(ev, folder)` (report.json, report.md, overlay_3d.png, structures.png), `overlay_3d`, `structure_chart`; `complete_report(raw, an, grid, folder, case, ...)` (fill, evaluate, error slices, report; used by both apps) | S4 |
+  | `run_mouse.py` | App `python -m orvue_us_inverse.mapping.run_mouse` (menu step `mouse`); `MouseSession(Recon3DOutputs)` (state, drawing and mouse routing of the single window, no window opened): `route_mouse` (top view -> probe, 3D panel drag / wheel -> rotate / zoom), `on_mouse`, `step` (capture, gap check, capture-rate EMA), `turn` / `set_angle` (keys; the wheel over the sweep), `view_buttons` / `set_view` / `next_view` (3D presets), `wheel_delta(flags)`, `undo`, `save`, `complete`, `coverage` (covered, enclosed holes, %), `speed()`, `init_view3d` / `refresh_view3d` / `live3d_due` (3D panel rebuilt only while the button is up), `compose()` (sweep \| B-mode \| 3D, status, keys); `speed_class`, `find_gaps` | S6 |
   | `evaluate_sweep.py` | Script `python -m orvue_us_inverse.mapping.evaluate_sweep [sweep.npz] [--fill]` (menu step `evaluate`) | S4 |
   | `experiments.py` | `ExperimentGrid` (spacing x overlap x orientation sets x cases + extras: 0.25 mm voxels and half-voxel grid offset for the default), `RunSpec`, `estimate`, `acquire_sweep` (one cached oracle sweep per case / yaw / spacing / overlap, reused by every orientation set and voxel size), `run_one` (reconstruct, fill up to round(spacing / voxel) - 1, evaluate, per-structure local Dice / MSD / HD95), `run_experiments` (process pool) -> results.csv, plots, summary.md; `aggregate`, `recommend`; S7 adds pose errors | S5, S7 |
   | `run_experiments.py` | Script `python -m orvue_us_inverse experiments [--workers N] [--quick] [--yes]` (menu step 7) | S5 |
   | `errors.py` | Pose-error injection | S7 |
 
-- Sweep file (`sweep_io`, format 1): one compressed .npz with `index` (N,), `t` (N,) simulated seconds,
-  `T_true`, `T_measured` (N, 4, 4), `labels` (N, 501, 301) int8, `images` (N, 501, 301) uint8 only when stored
-  (all frames or none), `metadata` (JSON: case, simulator settings, probe fields, frame shape, sweep and
-  acquisition configs, UTC timestamp, provenance = repository commit or None + simulator source `e789389`),
-  `format_version`. Size ~0.1 MB/frame with images, ~1.5 kB/frame labels only (800 frames: ~81 MB / ~1.4 MB).
+- Sweep file (`sweep_io`, format 2 since S6; format 1 still loads): one compressed .npz with `index` (N,), `t` (N,)
+  simulated seconds, `T_true`, `T_measured` (N, 4, 4), `labels` (N, 501, 301) int8, and for the frames that have a
+  B-mode image `images` (K, 501, 301) uint8 + `image_frames` (K,) (any mix: the B-mode can be switched during a
+  sweep), `metadata` (JSON: case, simulator settings, probe fields, frame shape, sweep and acquisition configs, UTC
+  timestamp, provenance = repository commit or None + simulator source `e789389`), `format_version`. Size ~0.1 MB
+  per frame with B-mode, ~1.5 kB/frame labels only (800 frames: ~81 MB / ~1.4 MB). The recon intensity volume uses
+  only the frames with an image.
 - Scripted sweep: for each yaw, u = (cos, sin), v = (-sin, cos); lanes along v at lateral positions p . u;
   n = ceil((E - W) / (W (1 - overlap))) + 1 lanes for the region extent E along u, centres spread evenly so the
   outer image edges touch the region edges (20% -> 4 lanes at 15, 38.3, 61.7, 85, actual 22.2%). Lanes are
@@ -296,10 +299,17 @@ caterpillar_hump, inflamed_obese (5 mm GB wall, 9 mm fat, impacted Hartmann ston
   (optional extra `view3d`). The 3D viewer and the browser 3D view need a browser (three.js from jsDelivr).
 - Install once: `pip install -r requirements.txt` and `pip install -e .`.
 - `python -m orvue_us_inverse` (menu) or
-  `python -m orvue_us_inverse viewer | calibrate | sim | scripted | recon | evaluate | run | test | board |
+  `python -m orvue_us_inverse viewer | calibrate | sim | scripted | mouse | recon | evaluate | run | test | board |
   experiments | anatomy | manual`.
 - `python -m orvue_us_inverse scripted [--case X] [--yaw 0 90] [--overlap 20] [--spacing 0.25] [--speed 10]
   [--no-images] [--live3d]` (keys space pause, + / - speed, v top view (black box / coverage / anatomy), r restart, s save sweep, 3 3D snapshot + STL, b browser 3D, p live 3D, g truth contours, c complete (evaluate, report), e error colouring, slices: click / arrows / PgUp PgDn, q quit).
+- `python -m orvue_us_inverse mouse [--case X] [--yaw 0] [--overlap 20] [--spacing 0.25] [--no-images]` (one window:
+  sweep | B-mode | 3D; hold the left button on the sweep to record; wheel over the sweep or q / e turn 5 deg,
+  0 / 9 set 0 / 90 deg (any time), i B-mode on / off (off = labels only, ~2x speed limit), u undo stroke, r reset, s save, c complete, a anatomy,
+  g truth in 3D, v next 3D
+  view, 3 snapshot + STL, b browser 3D, Esc quit; 3D panel: view buttons, drag rotates, wheel zooms).
+  Speed meter: max = spacing x measured capture rate; green < 80 %, amber <= 100 %, red above; gaps > 2 x spacing
+  within a stroke are red lines. Coverage map: black not scanned, inferno heat = hits, cyan = enclosed hole.
 - `python -m orvue_us_inverse recon [sweep.npz] [--voxel 0.5] [--fill] [--max-gap 1] [--splat 0]`
   (default: the newest sweep in `output/sweeps/`).
 - `python -m orvue_us_inverse evaluate [sweep.npz] [--voxel 0.5] [--fill] [--max-gap 1]` (default: newest sweep;

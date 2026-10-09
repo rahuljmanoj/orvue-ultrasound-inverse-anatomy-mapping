@@ -43,11 +43,10 @@ from orvue_us_inverse.mapping.acquisition import Acquirer
 from orvue_us_inverse.mapping.config import AcquisitionConfig, GridConfig, SweepConfig
 from orvue_us_inverse.mapping.poses import STEP_MM, ScriptedSweep
 from orvue_us_inverse.mapping.probe import FRAME_SHAPE, PROBE, make_simulator, probe_metadata
-from orvue_us_inverse.mapping.evaluate import evaluate, instance_masks, summary_table, write_report
-from orvue_us_inverse.mapping.recon import LabelCompounder, VoxelGrid, fill_small_holes, ground_truth
-from orvue_us_inverse.mapping.render import (SliceView, export_stl, snapshot_3d, surface_meshes,
-                                             write_browser_view)
-from orvue_us_inverse.paths import EXPORT_DIR, RESULTS_DIR, SWEEPS_DIR, VIEWER3D_OUT_DIR
+from orvue_us_inverse.mapping.evaluate import complete_report, instance_masks, summary_table
+from orvue_us_inverse.mapping.recon import LabelCompounder, VoxelGrid
+from orvue_us_inverse.mapping.render import Recon3DOutputs, SliceView
+from orvue_us_inverse.paths import RESULTS_DIR, SWEEPS_DIR
 from orvue_us_inverse.simulation.anatomy import CASES, COL_TAB
 from orvue_us_inverse.simulation.bmode import top_view
 from orvue_us_inverse.ui import clinical as ui
@@ -79,7 +78,7 @@ def sweep_filename(case: str, cfg: SweepConfig, store_images: bool, stamp: str |
     return f"{case}_{settings}_{stamp or time.strftime('%Y%m%d-%H%M%S')}.npz"
 
 
-class ScriptedPlayback:
+class ScriptedPlayback(Recon3DOutputs):
     """Sweep and reconstruction state, stepping on simulated time and drawing; no windows (main() shows them)."""
 
     def __init__(self, case: str, cfg: SweepConfig, acq_cfg: AcquisitionConfig, grid_cfg: GridConfig | None = None):
@@ -152,71 +151,25 @@ class ScriptedPlayback:
         return path
 
     # ---- ground truth and 3D outputs
-    def gt_volume(self) -> np.ndarray:
-        if self._gt is None:
-            self._gt = ground_truth(self.sim.an, self.grid)
-        return self._gt
-
-    def gt_meshes(self) -> dict:
-        if self._gt_meshes is None:
-            self._gt_meshes = surface_meshes(self.gt_volume(), self.grid)
-        return self._gt_meshes
-
     def complete(self, results: str = RESULTS_DIR, fill: bool = True, max_gap: int = 1) -> tuple[str, str]:
         """Stop acquisition, fill small holes, evaluate against the ground truth and write the report folder
         (with the error-coloured slices); the slice view then shows the errors. Returns (folder, summary table)."""
         self.completed = True
-        raw = self.comp.result()
-        labels = fill_small_holes(raw, max_gap) if fill else raw
         if self._instances is None:
             self._instances = instance_masks(self.sim.an, self.grid)
-        extra = dict(frames=len(self.acq.sweep), expected_frames=self.expected, sweep_finished=self.done,
-                     sweep_config=dataclasses.asdict(self.cfg), fill=fill, max_gap=max_gap if fill else 0,
-                     observed_fraction_before_fill=float((raw >= 0).mean()))
-        self.evaluation = evaluate(labels, self.sim.an, self.grid, gt=self.gt_volume(), instances=self._instances,
-                                   case=self.case, extra=extra)
-        self.final_labels = labels
-        v = self.slice_view
-        v.gt, v.errors = self.gt_volume(), True
         folder = os.path.join(results, f"{self.case}_{time.strftime('%Y%m%d-%H%M%S')}")
-        os.makedirs(folder, exist_ok=True)
-        cv2.imwrite(os.path.join(folder, "slices_errors.png"), v.update(labels))
-        write_report(self.evaluation, folder,
-                     title=f"{self.case}: {len(self.acq.sweep)} frames, yaw {self.cfg.yaw_list_deg}, overlap "
-                           f"{self.cfg.overlap_pct:g}%, spacing {self.cfg.frame_spacing_mm:g} mm")
+        self.evaluation, self.final_labels = complete_report(
+            self.comp.result(), self.sim.an, self.grid, folder, self.case, gt=self.gt_volume(),
+            instances=self._instances, fill=fill, max_gap=max_gap, slice_view=self.slice_view,
+            extra=dict(frames=len(self.acq.sweep), expected_frames=self.expected, sweep_finished=self.done,
+                       sweep_config=dataclasses.asdict(self.cfg)),
+            title=f"{self.case}: {len(self.acq.sweep)} frames, yaw {self.cfg.yaw_list_deg}, overlap "
+                  f"{self.cfg.overlap_pct:g}%, spacing {self.cfg.frame_spacing_mm:g} mm")
         r = self.evaluation.report
         self.message = (f"complete: {100 * r['accuracy_observed']:.1f}% of observed voxels correct, "
                         f"{r['counts']['detected']} structures detected, topology {r['topology']['status']}; "
                         f"report in output/results/{os.path.basename(folder)}")
         return folder, summary_table(r)
-
-    def toggle_gt_contours(self) -> None:
-        v = self.slice_view
-        if v.gt is None:
-            v.gt = self.gt_volume()
-            v.show_gt = True
-        else:
-            v.show_gt = not v.show_gt
-
-    def meshes(self) -> dict:
-        return surface_meshes(self.comp.result(), self.grid)
-
-    def export_3d(self, results: str = RESULTS_DIR, export: str = EXPORT_DIR) -> tuple[str, list[str]]:
-        """3D snapshot PNG (ground truth translucent) and one STL per structure; returns (png, stl paths)."""
-        stamp = time.strftime("%Y%m%d-%H%M%S")
-        meshes = self.meshes()
-        title = f"{self.case}: {len(self.acq.sweep)} frames, reconstruction (solid) vs ground truth (translucent)"
-        png = snapshot_3d(meshes, os.path.join(results, f"snapshot_{self.case}_{stamp}.png"), gt=self.gt_meshes(),
-                          title=title)
-        stls = export_stl(meshes, os.path.join(export, f"recon_{self.case}_{stamp}"))
-        self.message = f"3D snapshot {os.path.basename(png)}; {len(stls)} STL files in output/export/"
-        return png, stls
-
-    def browser_view(self, folder: str = VIEWER3D_OUT_DIR) -> str:
-        path = write_browser_view(self.meshes(), os.path.join(folder, f"recon_{self.case}.html"), gt=self.gt_meshes(),
-                                  title=f"{self.case}, {len(self.acq.sweep)} frames")
-        self.message = f"browser view {os.path.basename(path)}"
-        return path
 
     # ---- drawing: top view
     def px(self, xy) -> tuple[int, int]:
@@ -369,20 +322,6 @@ def parse_args(argv=None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
-def open_live3d(app: ScriptedPlayback):
-    """Live PyVista window, or None (with a message) when PyVista / VTK cannot be used."""
-    try:
-        from orvue_us_inverse.mapping.live3d import Live3D
-        live = Live3D()
-        live.update(app.meshes(), gt=app.gt_meshes() if app.slice_view.show_gt else None)
-        app.message = "live 3D window open (p closes it)"
-        return live
-    except Exception as e:                       # ImportError, blocked DLL, no OpenGL ...
-        app.message = f"live 3D window not available ({type(e).__name__}: {e}); use 3 or b"
-        print(f"[run_scripted] {app.message}", flush=True)
-        return None
-
-
 def main(argv=None) -> int:
     args = parse_args(argv)
     cfg = SweepConfig(yaw_list_deg=args.yaw, overlap_pct=args.overlap, frame_spacing_mm=args.spacing,
@@ -399,7 +338,7 @@ def main(argv=None) -> int:
                 dirty["slices"] = True
 
     cv2.setMouseCallback(WIN_SLICES, on_mouse)
-    live = open_live3d(app) if args.live3d else None
+    live = app.open_live3d() if args.live3d else None
     live_frames = len(app.acq.sweep)
     last = time.perf_counter()
     last_slices = last_live = 0.0
@@ -427,7 +366,7 @@ def main(argv=None) -> int:
                 live = None
             else:
                 if now - last_live >= LIVE3D_PERIOD_S and len(app.acq.sweep) != live_frames:
-                    live.update(app.meshes(), gt=app.gt_meshes() if app.slice_view.show_gt else None)
+                    app.update_live3d(live)
                     live_frames, last_live = len(app.acq.sweep), now
                 live.process()
         cv2.imshow(WIN_TOP, app.compose())
@@ -462,7 +401,7 @@ def main(argv=None) -> int:
             app.toggle_gt_contours()
             dirty["slices"] = True
             if live is not None:
-                live.update(app.meshes(), gt=app.gt_meshes() if app.slice_view.show_gt else None)
+                app.update_live3d(live)
         elif key == ord("r"):
             app.restart()
             sim_dt = None
@@ -492,7 +431,7 @@ def main(argv=None) -> int:
             webbrowser.open("file:///" + os.path.abspath(path).replace(os.sep, "/"))
         elif key == ord("p"):
             if live is None:
-                live = open_live3d(app)
+                live = app.open_live3d()
                 live_frames, last_live = len(app.acq.sweep), time.perf_counter()
             else:
                 live.close()

@@ -1,5 +1,5 @@
 """
-orvue_us_inverse.mapping.poses - pose sources for a sweep (S1: scripted sweep; S6 mouse and S7 camera to follow).
+orvue_us_inverse.mapping.poses - pose sources for a sweep (S1 scripted sweep, S6 mouse; S7 camera to follow).
 
 ScriptedSweep(cfg) plans serpentine lanes over the region for every yaw in cfg.yaw_list_deg and gives the probe
 pose as a function of simulated time at cfg.speed_mm_s.
@@ -18,10 +18,20 @@ at ROTATION_DEG_S) but is not recorded.
     sweep = ScriptedSweep(SweepConfig(yaw_list_deg=[0, 90]))
     for s in sweep.samples():            # every 0.05 mm of travel
         acquirer.feed(s.T, s.t, s.recording)
+
+MousePose (S6) is driven by mouse events on wall-clock time: position = probe face centre (mm), left button held =
+recording, yaw turned in steps or set (any time, also during a stroke: only the user turns it). It keeps a short
+position history for the speed meter.
+
+    pose = MousePose()
+    pose.move(x_mm, y_mm); pose.press(); ...; pose.release()
+    s = pose.sample()                    # Sample(t, T, recording, lane=None)
 """
 import bisect
 import math
-from collections.abc import Iterator
+import time
+from collections import deque
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 
 import numpy as np
@@ -246,3 +256,63 @@ class ScriptedSweep:
         lines.append(f"total: {len(self.lanes)} lanes, {self.expected_frames()} frames, "
                      f"coverage {100 * cov['all']:.1f}%, {self.duration_s:.1f} s simulated")
         return lines
+
+
+# ---------------------------------------------------------------- mouse (S6)
+class MousePose:
+    """Hand-guided pose source: mouse position = face centre, left button = recording, yaw by keys (wall clock)."""
+
+    ROTATE_STEP_DEG = 5.0
+    SPEED_WINDOW_S = 0.3              # speed = path length over the last SPEED_WINDOW_S / elapsed time
+
+    def __init__(self, x_mm: float = 50.0, y_mm: float = 50.0, yaw_deg: float = 0.0,
+                 clock: Callable[[], float] = time.perf_counter):
+        self.clock = clock
+        self.t0 = clock()
+        self.x, self.y, self.yaw = float(x_mm), float(y_mm), float(yaw_deg)
+        self.button = False
+        self._hist: deque = deque()        # (t, x, y)
+        self._remember()
+
+    @property
+    def t(self) -> float:
+        return self.clock() - self.t0
+
+    @property
+    def recording(self) -> bool:
+        return self.button
+
+    def _remember(self) -> None:
+        t = self.t
+        self._hist.append((t, self.x, self.y))
+        while len(self._hist) > 2 and t - self._hist[1][0] > self.SPEED_WINDOW_S:
+            self._hist.popleft()
+
+    def move(self, x_mm: float, y_mm: float) -> None:
+        self.x, self.y = float(x_mm), float(y_mm)
+        self._remember()
+
+    def press(self) -> None:
+        self.button = True
+
+    def release(self) -> None:
+        self.button = False
+
+    def rotate(self, sign: int) -> None:
+        """Turn by +/- ROTATE_STEP_DEG (yaw kept in [-180, 180))."""
+        self.yaw = (self.yaw + sign * self.ROTATE_STEP_DEG + 180.0) % 360.0 - 180.0
+
+    def snap(self, yaw_deg: float) -> None:
+        self.yaw = float(yaw_deg)
+
+    def speed_mm_s(self) -> float:
+        """Face-centre speed over the recent history (0 when the mouse has not moved for SPEED_WINDOW_S)."""
+        self._remember()
+        h = list(self._hist)
+        if len(h) < 2 or h[-1][0] - h[0][0] <= 0:
+            return 0.0
+        path = sum(math.hypot(b[1] - a[1], b[2] - a[2]) for a, b in zip(h, h[1:]))
+        return path / max(h[-1][0] - h[0][0], 1e-6)
+
+    def sample(self) -> Sample:
+        return Sample(self.t, BModeSimulator.pose_from_xy_yaw(self.x, self.y, self.yaw), self.recording, None)
