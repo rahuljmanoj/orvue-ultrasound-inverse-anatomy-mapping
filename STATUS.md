@@ -4,7 +4,7 @@ State of the inverse-mapping project. Updated at the end of every session (plan:
 
 | | |
 |---|---|
-| Repository | rahuljmanoj/orvue-ultrasound-inverse-anatomy-mapping, `main` after the S7 + clinical-version merge (branch `s7`, 2026-10-09) |
+| Repository | rahuljmanoj/orvue-ultrasound-inverse-anatomy-mapping, `main` after the S7 + clinical-version merge (PR #13); review fixes on branch `s7` (2026-10-09, not merged) |
 | Simulator code | copied in from rahuljmanoj/orvue-ultrasound-simulator `e789389`; frozen; see `UPSTREAM.md` |
 | Environment | conda env `orvue-robot`, Python 3.11.16 (`C:/Users/rahul/miniconda3/envs/orvue-robot/python.exe`); import check passed (Prep P2) |
 | Last update | 2026-10-09, after S7 and the clinical version |
@@ -26,7 +26,7 @@ State of the inverse-mapping project. Updated at the end of every session (plan:
 | Default spacing 0.25 mm | Done | `SweepConfig` / `--spacing` default 0.5 -> 0.25 mm; tests that check the default updated (401 frames per lane), tests that only need a sweep pinned to 0.5 mm (speed) |
 | S5 sweep-strategy experiments | Done | `mapping/experiments.py`, script `mapping/run_experiments.py` (menu 7 `experiments`); `tests/mapping/test_experiments.py` (5); full grid 156 runs in 16 min. Details below |
 | S6 mouse sweeps | Done | `poses.MousePose`, app `mapping/run_mouse.py` (menu 5 `mouse`); `tests/mapping/test_mouse.py` (14). Details below |
-| Clinical version | Done (awaiting review) | `clinical/` (window with B-MODE and INVERSE MAPPING tabs, AR overlay), `poses.ScriptedPose`, one window by default (case drop-down, calibration inside), developer menu `dev`; `tests/clinical/test_clinical.py` (11). Details below |
+| Clinical version | Done (awaiting review) | `clinical/` (window with B-MODE and INVERSE MAPPING tabs, AR overlay), `poses.ScriptedPose`, one window by default (case drop-down, calibration inside), developer menu `dev`; `tests/clinical/test_clinical.py` (14). Details below |
 | S7 camera-tracked probe, error study | Done | `poses.TrackedPose`, `errors.py`, app `run_tracked.py` (menu 6), error study (menu 10); `tests/mapping/test_errors.py` (7), `test_tracked.py` (8), 1 in `test_experiments.py`. Details below |
 
 ## Prep frames and timing (2026-10-08)
@@ -449,12 +449,31 @@ calibration in the header.
   opens the window directly, and "Calibrate probe" in its header runs the calibration (`CalibrationRoutine`) in the
   same window (`CalibrationView`).
 - Review round 2: the mouse wheel turns the probe (5 deg, like q / e) in the B-MODE tab too.
-- Tests: `tests/clinical/test_clinical.py` (11).
+- Review fixes (branch `s7` on top of PR #13, 2026-10-09):
+  - AR outlines: the shallowest-structure fill stays; the bile (2, 3, 5) and artery (6, 7) groups also get an outline
+    of their footprint at any depth (`ar.footprints`, `ar.outline_marks`): solid where the group is the shallowest
+    structure, dashed (diagonal hatch) where it is covered; arteries drawn last. The outline is a band of 5 voxels
+    (2.5 mm) inside the footprint: a 1-voxel ring would leave most of a covered cystic artery unmarked, because its
+    lumen lies inside the wall's footprint and runs into the RHA's footprint at the origin (ring widths 2 / 3 / 4 / 5
+    voxels mark 56 / 87 / 92 / 97 % of the cystic artery's footprint; the branches reach 100 % at 4). Ground truth of
+    the normal case: >= 95 % of the footprints of cystic_artery, cystic_artery_superficial and cystic_artery_deep
+    carry an artery outline or fill (only 16 / 39 / 58 % carry the fill alone).
+  - A fixed chip "SEGMENTATION: ORACLE (simulator labels)" in the INVERSE MAPPING header and in the AR key; the key
+    is titled "SURFACE MAP - vertical projection to z = 0" and explains the solid / dashed outlines.
+  - AR registration: a single-voxel structure at (37.25, 61.75) mm lands 0.41 px (camera straight above, 300 mm) and
+    0.21 px (tilted 15 deg) from `cv2.projectPoints` of that point at z = 0 (test limit 2 px).
+  - Frame time of the clinical window, INVERSE MAPPING tab, camera source (synthetic 1280 x 720 scene through a real
+    `ProbeTracker`, its image processing not timed: it runs in its own thread in the app), recording, AR on, 0.25 mm
+    spacing: B-mode on 113 ms mean (median 139, p95 147; 8.9 frames/s), B-mode off 65 ms mean (median 72, p95 75;
+    15.4 frames/s). Per recording frame (median): capture + reconstruction 85 ms with B-mode / 22 ms labels only,
+    drawing 49 ms, of which the camera view with the AR overlay 36 ms (1.7 ms with AR off: the layer is warped into
+    the full camera frame every loop). Not optimised yet (the warp could be cached while the board pose is still).
+- Tests: `tests/clinical/test_clinical.py` (14).
 
 ## Tests
 
-`python -m pytest tests` after the clinical version, review round 1 (2026-10-09): **175 passed, 1 xfailed** in 287 s
-(S7: 165 passed; the clinical version adds 10 in `tests/clinical/test_clinical.py`). After S7: 165 passed, 1 xfailed in 239 s (S6: 149 passed, 1 xfailed; S7 adds
+`python -m pytest tests` after the review fixes (2026-10-09): **179 passed, 1 xfailed** in 280 s (S7: 165 passed;
+the clinical version adds 14 in `tests/clinical/test_clinical.py`). After S7: 165 passed, 1 xfailed in 239 s (S6: 149 passed, 1 xfailed; S7 adds
 7 in `tests/mapping/test_errors.py` incl. the filter lag on synthetic camera frames, 8 in `test_tracked.py`, 1 in
 `test_experiments.py`; anatomy + tracking 58 passed, 1 xfailed, as upstream). The default 0.25 mm
 spacing made some sweeps in the tests longer; slowest: S5 2-run grid ~26 s, S2 block sweep ~12 s, S6 coverage ~12 s. Slowest mapping

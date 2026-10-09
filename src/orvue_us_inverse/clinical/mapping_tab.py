@@ -313,7 +313,7 @@ class MappingSession(TrackedSession):
         """Rebuild the 3D view, the AR overlay and the structure volumes from the current reconstruction."""
         lab = self.final_labels if self.completed else self.labels()
         if self.frames:
-            self._ar = ar.ar_layer(*ar.surface_map(lab, self.grid))
+            self._ar = ar.ar_layer(*ar.surface_map(lab, self.grid), ar.footprints(lab))
             self._groups = ar.group_volumes_ml(lab, self.grid.voxel_mm)
         else:
             self._ar, self._groups = None, []
@@ -531,8 +531,7 @@ class MappingSession(TrackedSession):
         if scene is not None:
             ui.fit(scene, CAM_RECT, img)
             if self.ar_on and self._ar is not None:
-                cv2.rectangle(img, (x, y + h - 22), (x + w - 1, y + h - 1), (0, 0, 0), -1)
-                ar.draw_key(img, x + 6, y + h - 7)
+                ar.draw_key(img, x, y + h - ar.KEY_H, w)
         else:
             text = "NO CAMERA" if self.tracker is None else "NO CAMERA FRAME"
             ui.text(img, text, (x + w // 2 - ui.text_w(text, 0.6) // 2, y + h // 2), ui.RED, 0.6)
@@ -577,6 +576,10 @@ class MappingSession(TrackedSession):
         img = np.full((HEIGHT, WIDTH, 3), ui.BG, np.uint8)
         src = SOURCE_LABELS[self.source]
         ui.header(img, "INVERSE ANATOMY MAPPING", f"{self.case}  |  source: {src}")
+        lg = ui.logo()                                   # x of the title as ui.header places it
+        tx = 10 + (lg.shape[1] + 10 if lg is not None else 0) + ui.text_w(ui.COMPANY) + 28
+        sub_end = tx + ui.text_w("INVERSE ANATOMY MAPPING", 0.55) + 16 + ui.text_w(f"{self.case}  |  source: {src}")
+        ar.segmentation_chip(img, (sub_end + 24, ui.HEADER_H // 2 + 6))       # fixed: labels are the oracle's
         cv2.line(img, (LEFT_W, ui.HEADER_H), (LEFT_W, HEIGHT - KEYS_H), ui.BORDER, 1)
         self.draw_left_panel(img)
         self.draw_bmode(img)

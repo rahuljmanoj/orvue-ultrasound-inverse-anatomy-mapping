@@ -77,13 +77,17 @@ def test_surface_map_and_projection():
     grid = VoxelGrid()
     lab = np.full(grid.shape, 0, np.int8)                 # liver everywhere (background)
     lab[20:40, 20:40, 30:50] = 3                          # bile 15-25 mm deep
-    lab[20:40, 20:40, 60:70] = 7                          # artery under it (hidden)
+    lab[20:40, 20:40, 60:70] = 7                          # artery under it (covered: dashed outline)
     lab[100:120, 100:120, 10:20] = 7                      # artery 5 mm deep
     l2, d2 = ar.surface_map(lab, grid)
     assert l2.shape == (grid.shape[1], grid.shape[0])
     assert l2[30, 30] == 3 and d2[30, 30] == pytest.approx(15.25) and l2[110, 110] == 7 and l2[0, 0] == -1
-    bgr, alpha = ar.ar_layer(l2, d2)
+    fps = ar.footprints(lab)
+    bgr, alpha = ar.ar_layer(l2, d2, fps)
     k = ar.UPSCALE
+    assert is_artery(bgr, alpha, 30, 21) and not is_artery(bgr, alpha, 30, 30)     # covered: outline band only
+    marks = ar.marked_columns(l2, fps, "artery")
+    assert marks[30, 21] and not marks[30, 30] and marks[110, 110]
     assert alpha[0, 0] == 0 and alpha[30 * k + 2, 30 * k + 2] > 0.3
     assert alpha[110 * k + 2, 110 * k + 2] > alpha[30 * k + 2, 30 * k + 2]      # shallower: more opaque
     frame = np.full((ss.H, ss.W, 3), 128, np.uint8)
@@ -96,6 +100,57 @@ def test_surface_map_and_projection():
     assert changed[v1, u1] and changed[v2, u2] and not changed[v3, u3] and not changed[0, 0]
     vols = {n: v for n, _, v in ar.group_volumes_ml(lab, grid.voxel_mm)}
     assert vols["gallbladder / bile ducts"] == pytest.approx(20 * 20 * 20 * 0.125 / 1000)
+
+
+def is_artery(bgr, alpha, row, col) -> bool:
+    """True when the layer block of voxel column (row = y, col = x) holds an artery-coloured pixel."""
+    k = ar.UPSCALE
+    blk = bgr[row * k:(row + 1) * k, col * k:(col + 1) * k].astype(int)
+    a = alpha[row * k:(row + 1) * k, col * k:(col + 1) * k]
+    red = (blk[..., 2] > 1.8 * blk[..., 1]) & (blk[..., 2] > 1.8 * blk[..., 0]) & (a > 0)
+    return bool(red.any())
+
+
+def test_covered_cystic_arteries_are_shown():
+    """Ground truth of the normal case (Anatomy.labels on the grid): the cystic artery and its two branches run under
+    the gallbladder in places; >= 95 % of their footprints carry an artery outline or fill."""
+    from orvue_us_inverse.mapping.evaluate import instance_masks
+    from orvue_us_inverse.mapping.recon import ground_truth
+    from orvue_us_inverse.simulation.anatomy import build_case
+    grid, an = VoxelGrid(), build_case("normal")
+    gt = ground_truth(an, grid)
+    inst = instance_masks(an, grid)
+    l2, d2 = ar.surface_map(gt, grid)
+    fps = ar.footprints(gt)
+    bgr, alpha = ar.ar_layer(l2, d2, fps)
+    marks = ar.marked_columns(l2, fps, "artery")
+    top = ar.group_map(l2) == ar.group_index("artery")
+    for name in ("cystic_artery", "cystic_artery_superficial", "cystic_artery_deep"):
+        ix, iy, _ = np.unravel_index(inst[name]["lumen"].flat, grid.shape)
+        cols = sorted(set(zip(iy.tolist(), ix.tolist())))             # (row = y, col = x)
+        assert np.mean([marks[r, c] for r, c in cols]) >= 0.95, name
+        assert np.mean([is_artery(bgr, alpha, r, c) for r, c in cols]) >= 0.95, name
+        assert np.mean([top[r, c] for r, c in cols]) < 0.95               # partly covered: the outlines matter
+
+
+@pytest.mark.parametrize("tilt", [0.0, 15.0])
+def test_ar_registration(tilt):
+    """A single-voxel structure at (37.25, 61.75) mm lands within 2 px of its projection at z = 0."""
+    grid = VoxelGrid()
+    lab = np.zeros(grid.shape, np.int8)
+    ix, iy = int(37.25 / grid.voxel_mm), int(61.75 / grid.voxel_mm)
+    assert grid.centre(np.array([[ix, iy, 0]]))[0, :2] == pytest.approx((37.25, 61.75))
+    lab[ix, iy, 10] = 7
+    l2, d2 = ar.surface_map(lab, grid)
+    bgr, alpha = ar.ar_layer(l2, d2)
+    T = ss.camera_pose(300.0, tilt_x_deg=tilt)
+    frame = np.zeros((ss.H, ss.W, 3), np.uint8)
+    out = ar.project_layer(frame, bgr, alpha, T, ss.K, ss.DIST, grid).astype(float).sum(axis=2)
+    assert out.sum() > 0
+    v, u = np.indices(out.shape)
+    centroid = np.array([(u * out).sum(), (v * out).sum()]) / out.sum()
+    p, _ = cv2.projectPoints(np.array([[37.25, 61.75, 0.0]]), cv2.Rodrigues(T[:3, :3])[0], T[:3, 3], ss.K, ss.DIST)
+    assert np.linalg.norm(centroid - p.reshape(2)) <= 2.0
 
 
 def test_sources_and_recording_buttons():

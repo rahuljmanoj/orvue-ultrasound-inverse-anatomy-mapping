@@ -544,3 +544,17 @@ Natural next steps are classical recognition (detecting anechoic structures from
 - S5: oracle-only sweeps use `labels_image()` instead of `render()`, and orientation sweeps are reused across orientation sets.
 - S7: `get_pose()` returns the filtered pose; its lag is measured.
 - Things to watch: rows for blocked VTK and for thin walls below the voxel size.
+
+**Oct 9, 2026: after S7, clinical version and review fixes.**
+
+- Beyond the plan, on request: a clinical version (`clinical/`): `python -m orvue_us_inverse` opens one window, the
+  Ultrasound Imaging Simulator, with B-MODE and INVERSE MAPPING tabs (scripted / mouse / camera-probe sources), a case
+  selector, the probe calibration and an AR overlay of the reconstruction on the camera view; the session apps stay
+  as developer tools (`python -m orvue_us_inverse dev`). Merged with S7 (PR #13).
+- AR overlay review: the overlay is a surface map (vertical projection to z = 0), not a perspective rendering; the
+  shallowest-structure fill alone hid covered vessels (cystic artery under the gallbladder), so bile and artery
+  outlines are drawn at any depth (dashed when covered, 2.5 mm band); tested on the normal case's ground truth
+  (>= 95 % of the cystic artery footprints shown). A fixed chip states that the segmentation is the oracle's
+  (simulator labels), until recognition replaces it.
+- AR registration tested on synthetic camera poses (straight and 15 deg tilt: < 0.5 px); the clinical window's frame
+  time measured (8.9 frames/s recording with B-mode and AR, 15.4 without B-mode; the AR warp costs ~34 ms a frame).
