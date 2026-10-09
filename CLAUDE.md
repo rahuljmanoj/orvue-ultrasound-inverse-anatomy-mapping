@@ -63,7 +63,10 @@ UPSTREAM.md                  origin of the copied simulator code and its change 
     hold-to-record), no lane guides for
     mouse / camera, 3D-centred layout (left panel, live B-mode + structures, 3D, camera view + AR, sweep map, status,
     speed), window size = the B-mode tab's (`WIDTH` x `HEIGHT` = 1831 x 1008).
-  - `ar.py`: `surface_map` (shallowest structure per column), `ar_layer` (group colours, depth-coded alpha, outline),
+  - `ar.py`: `surface_map` (shallowest structure per column; a vertical projection to z = 0), `footprints` /
+    `outline_marks` / `marked_columns` (bile and artery footprints at any depth: 5-voxel outline band, solid on top,
+    dashed when covered, arteries last), `ar_layer(lab2d, depth2d, fps)` (group colours, depth-coded alpha, outlines),
+    `SEGMENTATION` chip (oracle labels; shown in the mapping header and the key),
     `project_layer` (homography of the z = 0 plane with `T_cam_phantom`, K, dist), `group_volumes_ml`, `draw_key`.
 - `paths.py`: REPO_ROOT, PACKAGE_DIR, LOGO_PATH, SETTINGS_PATH, CALIBRATION_PATH, UPSTREAM_PATH, DOCS_DIR, FIGURES_DIR,
   IMAGES_DIR, PRINT_DIR, MANUAL_PDF, BOARD_PDF, OUTPUT_DIR, CAPTURES_DIR, LOGS_DIR, EXPORT_DIR, VIEWER3D_OUT_DIR,

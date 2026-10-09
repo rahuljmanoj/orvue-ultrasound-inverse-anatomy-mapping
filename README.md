@@ -120,9 +120,12 @@ studies) stay in `python -m orvue_us_inverse dev`.
   - Camera probe: the camera sets position and angle.
   - The mouse and camera have no lane guides: move the probe in any direction and angle and fill the map. Frames from
     every source add up in one sweep; u undoes the last stroke (a scripted lane counts as a stroke).
-  - AR overlay (o or button): the reconstructed structures (gallbladder / bile ducts, stone, artery, vein, lymph node)
-    projected onto the phantom surface in the live camera view where they lie below it; shallow = bright and
-    opaque, deep = darker and more transparent; key under the view.
+  - AR overlay (o or button): a surface map of the reconstructed structures (gallbladder / bile ducts, stone,
+    artery, vein, lymph node), i.e. a vertical projection to the phantom surface (z = 0), drawn on the live camera
+    view: the shallowest structure in each column, shallow = bright and opaque, deep = darker and more transparent.
+    Bile ducts and arteries are also outlined where something covers them (dashed; solid where they are on top), so
+    a cystic artery under the gallbladder stays visible. The labels are the simulator's (oracle segmentation, chip in
+    the header and the key).
   - c complete: evaluation against the simulator's ground truth; the structures panel then lists each structure as
     detected / missed / not covered and the report goes to `output/results/<case>_mapping_<time>/`. s saves the
     sweep, b browser 3D view, x 3D snapshot + STL, r reset, i B-mode on / off, g truth in 3D.
@@ -201,7 +204,7 @@ output/                  generated at run time, gitignored: captures/, logs/, ex
 | `src/orvue_us_inverse/clinical/__main__.py` | `python -m orvue_us_inverse.clinical`: the clinical window |
 | `src/orvue_us_inverse/clinical/app.py` | The one window: B-MODE tab (the simulator, as `bmode.demo`), INVERSE MAPPING tab, case drop-down, probe calibration view, shared camera |
 | `src/orvue_us_inverse/clinical/mapping_tab.py` | INVERSE MAPPING tab: scripted / mouse / camera sources, 3D-centred layout, live B-mode, structures, camera view, sweep map |
-| `src/orvue_us_inverse/clinical/ar.py` | AR overlay: shallowest reconstructed structure per column, depth-coded layer, projection onto the camera image |
+| `src/orvue_us_inverse/clinical/ar.py` | AR overlay: surface map (shallowest reconstructed structure per column, depth-coded), bile / artery outlines at any depth (dashed when covered), projection onto the camera image, key |
 | `src/orvue_us_inverse/paths.py` | Every file and folder location |
 | `src/orvue_us_inverse/assets/orvue_logo.jpg` | Orvue Surgical logo (PDF header) |
 | `src/orvue_us_inverse/core/__init__.py` | Example area sub-package |
