@@ -73,6 +73,10 @@ class Acquirer:
         self.last, self._new_stretch = frame, False
         return frame
 
+    def break_stretch(self) -> None:
+        """The pose stream was interrupted (e.g. tracking lost): the next recorded pose starts a new stretch."""
+        self._new_stretch = True
+
     def truncate(self, n: int) -> list[FrameRecord]:
         """Keep the first n frames (undo); returns the removed ones. The next recorded pose starts a new stretch."""
         removed = self.sweep.frames[n:]

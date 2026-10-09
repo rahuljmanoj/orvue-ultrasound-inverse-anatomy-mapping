@@ -18,7 +18,9 @@ run-time output in the gitignored `output/`.
 - [Start a new project from this template](#start-a-new-project-from-this-template)
 - [Setup](#setup)
 - [Quick start](#quick-start)
+- [Ultrasound Imaging Simulator: one window for everything](#ultrasound-imaging-simulator-one-window-for-everything)
 - [Scanning by hand (mouse sweep)](#scanning-by-hand-mouse-sweep)
+- [Sweeping with the tracked dummy probe](#sweeping-with-the-tracked-dummy-probe)
 - [Project layout](#project-layout)
 - [Rules](#rules)
 - [Tests](#tests)
@@ -49,7 +51,11 @@ runs without it.
 
 ## Quick start
 ```
-python -m orvue_us_inverse              menu (steps in the order of use, 0 = exit)
+python -m orvue_us_inverse              the Ultrasound Imaging Simulator: one window for B-mode, inverse
+                                        anatomy mapping, case selection and probe calibration
+python -m orvue_us_inverse dev          developer menu (every step and study, in the order of use)
+python -m orvue_us_inverse clinical     the same window with options ([--tab bmode | mapping] [--case X]
+                                        [--no-camera] [--source video])
 python -m orvue_us_inverse viewer       check the probe tracking (D405)
 python -m orvue_us_inverse calibrate    probe calibration -> config/calibration.json
 python -m orvue_us_inverse sim [case]   Ultrasound Imaging Simulator ([--track] [--cam-view] [--mouse])
@@ -61,13 +67,17 @@ python -m orvue_us_inverse mouse        hand-guided sweep, one window: sweep | B
                                         the left button to record, i B-mode on / off, speed meter, coverage holes,
                                         u undo, c evaluate ([--case X] [--yaw 0] [--overlap 20] [--spacing 0.25]
                                         [--no-images] = start with B-mode off)
+python -m orvue_us_inverse tracked      sweep with the camera-tracked dummy probe, same window as the mouse sweep
+                                        (hold SPACE to record, m switches camera / mouse, tracking status line;
+                                        [--inject jitter=0.5,yaw=0.5,latency=50] [--mouse] [--source video])
 python -m orvue_us_inverse recon        reconstruct a sweep ([sweep.npz, default newest] [--voxel 0.5] [--fill])
                                         -> output/results/recon_<name>.npz + 3 slice PNGs vs ground truth
 python -m orvue_us_inverse evaluate     evaluate a sweep against the ground truth ([sweep.npz] [--voxel 0.5]
                                         [--fill]) -> output/results/<case>_<time>/ (report.md, .json, figures)
 python -m orvue_us_inverse experiments  sweep-strategy study, headless, parallel ([--workers N] [--quick]
                                         [--yes]) -> output/results/experiments_<time>/ (results.csv, plots,
-                                        summary.md); sweeps cached in output/cache/experiments/
+                                        summary.md); sweeps cached in output/cache/experiments/; --errors: the
+                                        tracking-error study -> output/results/errors_<time>/ (summary_errors.md)
 python -m orvue_us_inverse run          example step -> output/logs/example.txt
 python -m orvue_us_inverse test         all tests
 python -m orvue_us_inverse board        -> docs/print/tracking_board.pdf
@@ -84,9 +94,42 @@ lab = sim.labels_image(sim.pose_from_xy_yaw(50, 60, 0))                      # l
 ```
 The console script `orvue-us-inverse` does the same as `python -m orvue_us_inverse`.
 
+## Ultrasound Imaging Simulator: one window for everything
+
+`python -m orvue_us_inverse` opens the window "Ultrasound Imaging Simulator" (no menu). Its header holds the CASE
+drop-down (the anatomy case for both tabs; n / p in the B-MODE tab do the same; a case change starts a new mapping,
+not while recording) and "Calibrate probe" (the probe calibration in the same window: SPACE captures, y / n save or
+discard the correction, Esc aborts, Enter returns). The IMAGING MODE tabs in the left panel (or Tab) switch between
+B-MODE and INVERSE MAPPING; Doppler and Elastography are placeholders. The camera is opened once and shared; without
+it the window runs with the mouse. Esc closes the window. The developer apps (scripted, mouse and tracked sweeps,
+studies) stay in `python -m orvue_us_inverse dev`.
+
+- B-MODE: the simulator of the developer menu's step 3, unchanged: B-mode display with the imaging sliders,
+  anatomy map, readouts, D405 camera view and phantom map (m camera / mouse, t camera view, z zoom; the mouse
+  wheel or q / e turn the probe 5 deg in mouse control).
+- INVERSE MAPPING (3D-centred): left the SOURCE (scripted sweep / mouse / camera probe, keys 1 / 2 / 3), the
+  record button and the acquisition buttons; then the live B-mode at the probe (the captured frame while
+  recording) with the structures found underneath; in the centre the 3D reconstruction (drag, wheel, view
+  presets, patient directions); right the camera view with the AR overlay, the sweep map (coverage, holes, speed
+  gaps), status and speed.
+  - SPACE or the RECORD button switches recording on and off, for every source.
+  - Scripted sweep: starts / pauses the planned lanes (S5 strategy, drawn on the map); one frame per loop, so
+    nothing is skipped; the 3D view and overlay refresh every 80 frames.
+  - Mouse: with recording on, the probe follows the mouse over the sweep map (holding the left button on the map
+    also records, as in the mouse app); wheel / q / e turn.
+  - Camera probe: the camera sets position and angle.
+  - The mouse and camera have no lane guides: move the probe in any direction and angle and fill the map. Frames from
+    every source add up in one sweep; u undoes the last stroke (a scripted lane counts as a stroke).
+  - AR overlay (o or button): the reconstructed structures (gallbladder / bile ducts, stone, artery, vein, lymph node)
+    projected onto the phantom surface in the live camera view where they lie below it; shallow = bright and
+    opaque, deep = darker and more transparent; key under the view.
+  - c complete: evaluation against the simulator's ground truth; the structures panel then lists each structure as
+    detected / missed / not covered and the report goes to `output/results/<case>_mapping_<time>/`. s saves the
+    sweep, b browser 3D view, x 3D snapshot + STL, r reset, i B-mode on / off, g truth in 3D.
+
 ## Scanning by hand (mouse sweep)
 
-`python -m orvue_us_inverse mouse` (menu 5). The mouse position is the probe face centre; hold the left button to
+`python -m orvue_us_inverse mouse` (developer menu 5). The mouse position is the probe face centre; hold the left button to
 record. One window: the sweep (left), the latest frame (middle), the 3D reconstruction (right; drag to rotate, wheel
 to zoom), status and speed underneath. The middle panel's button "B-mode ON / OFF" (or key i) switches the B-mode
 simulation: off computes only the oracle labels (~13 ms instead of ~78 ms per frame), shown in tissue colours with a
@@ -108,6 +151,21 @@ on where you want to see the ultrasound image; `--no-images` starts with it off.
    writes a snapshot and STL files.
 6. Press c: the report shows which structures were detected, missed or not covered; c also fills 1-voxel gaps
    between frames in the 3D volume (not the holes on the map). s saves the sweep, Esc quits.
+
+## Sweeping with the tracked dummy probe
+
+1. Print the tracking board (menu 13) and calibrate the probe (menu 2, `python -m orvue_us_inverse calibrate`);
+   check the tracking (menu 1, `python -m orvue_us_inverse viewer`): reference 4/4 markers, probe ID 0, small
+   reprojection errors.
+2. `python -m orvue_us_inverse tracked` (menu 6): the same window as the mouse sweep, the pose comes from the camera.
+   Hold SPACE to record while moving the probe along the lane bands; the tracking line shows TRACKING OK / LOST,
+   the markers, reprojection errors, frame rate and the filter lag. No frame is captured while tracking is lost.
+3. m switches to the mouse (and back) at any time, e.g. when the camera is not available; the app also starts
+   with the mouse if the camera cannot be opened.
+4. c evaluates, s saves. `--inject jitter=0.5,yaw=0.5,latency=50` adds tracking errors to the reconstruction (the
+   simulator renders from the tracked pose, so real tracking errors are otherwise invisible).
+5. The tracking-error study (`python -m orvue_us_inverse experiments --errors`, menu 10) states the tracking
+   accuracy needed to keep the cystic duct and the CBD reconstructed and connected.
 
 ## Project layout
 ```
@@ -138,7 +196,12 @@ output/                  generated at run time, gitignored: captures/, logs/, ex
 | `docs/.gitkeep` | Keeps `docs/` in git until the first PDF is generated |
 | `scripts/rename_project.py` | Turns the template into a new project (package name and title) |
 | `src/orvue_us_inverse/__init__.py` | Package docstring and `__version__` |
-| `src/orvue_us_inverse/__main__.py` | Entry point: menu and `python -m orvue_us_inverse <command>` |
+| `src/orvue_us_inverse/__main__.py` | Entry point: the Ultrasound Imaging Simulator window (default), developer menu (`dev`) and `python -m orvue_us_inverse <command>` |
+| `src/orvue_us_inverse/clinical/__init__.py` | Clinical-version sub-package |
+| `src/orvue_us_inverse/clinical/__main__.py` | `python -m orvue_us_inverse.clinical`: the clinical window |
+| `src/orvue_us_inverse/clinical/app.py` | The one window: B-MODE tab (the simulator, as `bmode.demo`), INVERSE MAPPING tab, case drop-down, probe calibration view, shared camera |
+| `src/orvue_us_inverse/clinical/mapping_tab.py` | INVERSE MAPPING tab: scripted / mouse / camera sources, 3D-centred layout, live B-mode, structures, camera view, sweep map |
+| `src/orvue_us_inverse/clinical/ar.py` | AR overlay: shallowest reconstructed structure per column, depth-coded layer, projection onto the camera image |
 | `src/orvue_us_inverse/paths.py` | Every file and folder location |
 | `src/orvue_us_inverse/assets/orvue_logo.jpg` | Orvue Surgical logo (PDF header) |
 | `src/orvue_us_inverse/core/__init__.py` | Example area sub-package |
@@ -150,7 +213,8 @@ output/                  generated at run time, gitignored: captures/, logs/, ex
 | `src/orvue_us_inverse/mapping/probe.py` | The only probe source: `PROBE` (every field stated), `FRAME_SHAPE`, `make_simulator` (persistence 0), `simulator_settings`, `probe_metadata` (Prep) |
 | `src/orvue_us_inverse/mapping/config.py` | Settings dataclasses: `GridConfig` (bounds, 0.5 mm voxels, shape, centres), `SweepConfig`, `AcquisitionConfig` (S0) |
 | `src/orvue_us_inverse/mapping/sweep_io.py` | `FrameRecord`, `Sweep` (save / load compressed .npz), `make_metadata` (probe, settings, provenance), `estimate_size_mb` (S0) |
-| `src/orvue_us_inverse/mapping/poses.py` | `ScriptedSweep`: serpentine lanes per yaw, overlap, poses on simulated time, coverage (S1); `MousePose`: mouse-driven pose, angle, speed (S6); camera (S7) to follow |
+| `src/orvue_us_inverse/mapping/poses.py` | `ScriptedSweep`: serpentine lanes per yaw, overlap, poses on simulated time, coverage (S1); `MousePose`: mouse-driven pose, angle, speed (S6); `TrackedPose`: camera-tracked probe from `ProbeTracker` (S7); `ScriptedPose`: scripted lanes played in an app (clinical) |
+| `src/orvue_us_inverse/mapping/run_tracked.py` | App: sweep with the camera-tracked dummy probe (switchable to the mouse), tracking status, live error injection (S7) |
 | `src/orvue_us_inverse/mapping/run_mouse.py` | App: hand-guided mouse sweep in one window (sweep, B-mode, 3D) with lane guides, speed meter, coverage holes, speed gaps, undo, complete (S6) |
 | `src/orvue_us_inverse/mapping/acquisition.py` | `Acquirer`: distance / angle-triggered capture of frames into a `Sweep` (S1) |
 | `src/orvue_us_inverse/mapping/run_scripted.py` | App: scripted sweep over the hidden box, top view with lanes and coverage trace, B-mode, save (S1) |
@@ -162,7 +226,7 @@ output/                  generated at run time, gitignored: captures/, logs/, ex
 | `src/orvue_us_inverse/mapping/evaluate_sweep.py` | Script: saved sweep -> reconstruction -> evaluation report in `output/results/<case>_<time>/` (S4) |
 | `src/orvue_us_inverse/mapping/experiments.py` | Sweep-strategy study: grid, cached oracle sweeps, parallel runs, per-structure metrics, CSV, plots, summary and recommendation (S5) |
 | `src/orvue_us_inverse/mapping/run_experiments.py` | Script: runtime estimate, full or reduced grid, prints the summary table and recommendation (S5) |
-| `src/orvue_us_inverse/mapping/errors.py` | Pose-error injection (jitter, bias, latency, scale); placeholder until S7 |
+| `src/orvue_us_inverse/mapping/errors.py` | `PoseErrorModel` (jitter, bias, latency, scale; T_true -> T_measured), `LatencyBuffer`, `filter_lag` of the tracker's one-euro filter (S7) |
 | `src/orvue_us_inverse/simulation/__init__.py` | Simulation sub-package (copied) |
 | `src/orvue_us_inverse/simulation/anatomy.py` | Virtual anatomy: tissue table (labels 0-10), tubes / blobs, the 8 cases, `validate` (copied, read-only) |
 | `src/orvue_us_inverse/simulation/bmode.py` | B-mode simulator `BModeSimulator`, simulator window and demo (copied, read-only) |
@@ -193,16 +257,20 @@ output/                  generated at run time, gitignored: captures/, logs/, ex
 | `tests/mapping/test_poses_acquisition.py` | Lane layout and overlap, coverage, triggers over full sweeps, no capture in transitions, save / load |
 | `tests/mapping/test_run_scripted.py` | Scripted-sweep app without windows: stepping, drawing, file name, save; menu step |
 | `tests/mapping/test_evaluate.py` | Perfect reconstruction, one-voxel shift, cut cystic duct, not covered vs missed, report files, script, app complete |
-| `tests/mapping/test_experiments.py` | Grid and sweep reuse, runtime estimate, a 2-run grid headless with CSV columns, plots, summary, cache reuse |
+| `tests/mapping/test_experiments.py` | Grid and sweep reuse, runtime estimate, a 2-run grid headless with CSV columns, plots, summary, cache reuse; tiny error study (S7) |
+| `tests/mapping/test_errors.py` | Error model: zero error identical, latency = speed x latency, bias shift within a voxel, jitter, parsing, filter lag (incl. synthetic camera frames) |
+| `tests/mapping/test_tracked.py` | Tracked app with a fake tracker: space recording, tracking loss, camera / mouse switch, live injection, status, report |
 | `tests/mapping/test_mouse.py` | Mouse sweeps with synthetic events: recording gating, turning (keys, wheel), window routing, 3D view presets, speed classes, capture rate, gaps, undo, coverage holes, 3D panel, complete |
 | `tests/mapping/test_render.py` | Slice shapes / colours / idempotence, meshes inside the grid, timing, snapshot, STL, browser page, app outputs, PyVista off-screen |
+| `tests/clinical/__init__.py` | Clinical tests package |
+| `tests/clinical/test_clinical.py` | Clinical window without a window: scripted pose source, AR overlay and projection, mapping tab sources and buttons with a fake tracker, map coordinates, SPACE recording toggle, B-mode tab (wheel turns the probe), tab switching, case drop-down, calibration view, entry point |
 | `tests/mapping/test_recon.py` | `pixel_points` = `plane_points`, accuracy against the ground truth, incremental = batch, hole filling, script |
 
 ## Rules
 - Absolute imports only (`from orvue_us_inverse.core.example import scaled`); no `sys.path` manipulation.
 - Every file location goes in `paths.py`; run-time output under `output/`; committed configuration under `config/`.
 - One sub-package per area (`core/`, `simulation/`, `tracking/` ...); each module runnable with `python -m orvue_us_inverse.<area>.<module>`;
-  add new steps to `COMMANDS` and `MENU` in `__main__.py`.
+  add new steps to `COMMANDS` and `MENU` (developer menu) in `__main__.py`.
 - The copied simulator files are frozen baselines (`simulation/anatomy.py`, `simulation/bmode.py`,
   `tracking/markers.py` layout constants and `tracking/tracker.py` read-only); log any change in `UPSTREAM.md`.
 - One README.md: add, move or remove the row in "Every file" whenever a tracked file is added, moved or removed.

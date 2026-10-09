@@ -4,10 +4,10 @@ State of the inverse-mapping project. Updated at the end of every session (plan:
 
 | | |
 |---|---|
-| Repository | rahuljmanoj/orvue-ultrasound-inverse-anatomy-mapping, `main` after the S6 merge (branch `s6`, 2026-10-09) |
+| Repository | rahuljmanoj/orvue-ultrasound-inverse-anatomy-mapping, `main` after the S7 + clinical-version merge (branch `s7`, 2026-10-09) |
 | Simulator code | copied in from rahuljmanoj/orvue-ultrasound-simulator `e789389`; frozen; see `UPSTREAM.md` |
 | Environment | conda env `orvue-robot`, Python 3.11.16 (`C:/Users/rahul/miniconda3/envs/orvue-robot/python.exe`); import check passed (Prep P2) |
-| Last update | 2026-10-09, after S6 |
+| Last update | 2026-10-09, after S7 and the clinical version |
 
 ## Sessions
 
@@ -26,7 +26,8 @@ State of the inverse-mapping project. Updated at the end of every session (plan:
 | Default spacing 0.25 mm | Done | `SweepConfig` / `--spacing` default 0.5 -> 0.25 mm; tests that check the default updated (401 frames per lane), tests that only need a sweep pinned to 0.5 mm (speed) |
 | S5 sweep-strategy experiments | Done | `mapping/experiments.py`, script `mapping/run_experiments.py` (menu 7 `experiments`); `tests/mapping/test_experiments.py` (5); full grid 156 runs in 16 min. Details below |
 | S6 mouse sweeps | Done | `poses.MousePose`, app `mapping/run_mouse.py` (menu 5 `mouse`); `tests/mapping/test_mouse.py` (14). Details below |
-| S7 | Not started | Sweeps and reports in `output/` (gitignored) |
+| Clinical version | Done (awaiting review) | `clinical/` (window with B-MODE and INVERSE MAPPING tabs, AR overlay), `poses.ScriptedPose`, one window by default (case drop-down, calibration inside), developer menu `dev`; `tests/clinical/test_clinical.py` (11). Details below |
+| S7 camera-tracked probe, error study | Done | `poses.TrackedPose`, `errors.py`, app `run_tracked.py` (menu 6), error study (menu 10); `tests/mapping/test_errors.py` (7), `test_tracked.py` (8), 1 in `test_experiments.py`. Details below |
 
 ## Prep frames and timing (2026-10-08)
 
@@ -357,11 +358,105 @@ How to scan the region well by hand (also in README):
 5. The 3D panel shows the result after each stroke; press c: the report tells you which structures were not
    covered or missed.
 
+## S7 camera-tracked probe and tracking-error study (2026-10-09)
+
+Built: `poses.TrackedPose` (filtered pose from `ProbeTracker.get_state()`, None while tracking is invalid);
+`errors.py` (`PoseErrorModel`: jitter, bias, latency, scale; `LatencyBuffer`; `filter_lag`); app `run_tracked.py`
+(menu 6 `tracked`): the mouse-sweep window with the pose from the camera (hold SPACE to record), m switches to the
+mouse and back (the app starts with the mouse when the camera cannot be opened), a tracking status line (TRACKING
+OK / board held / LOST, reference markers of 4, probe ID 0, reprojection errors reference / probe / upright, frame
+rate, filter lag at the current speed, injected error), `--inject` errors live; error study (`experiments.ErrorGrid`,
+`run_experiments --errors`, menu 10).
+
+Tracking filter lag (one-euro, TrackerConfig defaults, 30 frames/s): 65 ms at 10 mm/s (0.65 mm behind), 85 ms at
+5 mm/s (0.42 mm), 111 ms at 2 mm/s, 47 ms at 20 mm/s; the same within 1 ms end to end on synthetic camera frames
+(raw tracked position on synthetic frames: +-0.04 mm). The D405 camera latency adds to this and is not measured here
+(needs the hardware).
+
+Error study: default strategy (0.25 mm, 20 %, yaw 0), 4 position jitters x 4 yaw jitters x 3 latencies x 2 biases
+x 3 cases = 288 runs in 16.1 min (estimate 11). Needs: cystic duct and CBD detected with local Dice >= 0.5 and the
+GB - CBD connection kept, in every case. Results `output/results/errors_20261009-122109/`.
+
+| Error (one at a time) | Cystic duct Dice | CBD Dice | Duct / CBD HD95 (mm) | Topology ok | Needs met |
+|---|---|---|---|---|---|
+| none | 0.955 | 0.972 | 0.50 / 0.50 | 3/3 | yes |
+| jitter 0.5 mm | 0.871 | 0.887 | 0.50 / 0.71 | 3/3 | yes |
+| jitter 1 mm | 0.725 | 0.792 | 0.80 / 1.00 | 3/3 | yes |
+| jitter 2 mm | 0.481 | 0.525 | 1.12 / 1.53 | 0/3 | NO |
+| yaw jitter 2 deg | 0.945 | 0.975 | 0.50 / 0.50 | 3/3 | yes |
+| latency 100 ms | 0.905 | 0.960 | 0.50 / 0.50 | 3/3 | yes |
+| bias 1 mm | 0.743 | 0.763 | 0.91 / 1.00 | 3/3 | yes |
+
+**Tracking accuracy needed (robust: every combination within the limits passes, 48 combinations): position jitter
+<= 0.5 mm (1 sigma per axis), yaw jitter <= 2 deg, latency <= 100 ms at 10 mm/s, bias <= 1 mm.** One factor at a
+time 1 mm of jitter passes, but combined with yaw jitter, latency or bias it breaks the GB - CBD connection in 14 of
+24 combinations (1-2 of 3 cases); 0.5 mm passes in all 24. Yaw jitter up to 2 deg and latency up to 100 ms
+(1 mm along the sweep) cost little; a bias moves the reconstruction rigidly (Dice drops, connections survive).
+
+S7 deviations / decisions:
+- Review fix (2026-10-09, reported with the real camera: tracking OK, but SPACE recorded nothing and showed no
+  B-mode): `TrackedPose` passed the full tracked pose on, and with the committed calibration the face comes out
+  2-3 mm off the surface, so the acquirer rejected every frame as "not in contact" (|z| <= 1 mm). It now uses x, y and
+  yaw with the probe upright at z = 0, as the simulator's own tracked mode does (bmode.demo, contact on); the tracked
+  face z and tilt are shown in the tracking line. The SPACE detection also accepts a recent space key event as proof
+  of focus (the window-title focus check alone may not match OpenCV's window); REC and "probe outside the region"
+  are shown. Regression test: the real ProbeTracker with the committed calibration on synthetic frames captures.
+- On request: the tracked app keeps the mouse as a switchable pose source (m), and is the mouse-sweep window (one
+  window, clinical style) with a tracking line.
+- Space "held": OpenCV reports key presses but not releases, so the held state is read with GetAsyncKeyState
+  (Windows, only while the window has the focus); elsewhere space toggles recording.
+- Latency in the study uses each sweep's planned path (exact); live it uses a buffer of the recent poses. Bias is
+  along x; scale and tilt jitter are in the model but not in the grid.
+- Tolerance rule: besides "one factor at a time" (optimistic) the summary gives the largest box of error levels in
+  which every combination passes (`experiments.robust_box`); the first summary of the run reported only the former,
+  rewritten with `--resummarize` (now also for error folders).
+- Bug found and fixed in the S5 per-structure local metrics: voxels a structure shares with a same-label neighbour
+  (cystic duct / GB neck, duct / CBD junction) were excluded from its reconstruction but kept in its truth, which
+  understated the cystic duct's local Dice (0.65 -> 0.955 at zero error) and inflated its HD95 (5 mm -> 0.5 mm). The
+  S5 recommendation is unaffected (it used class-level lumen Dice and structure recall); the per-structure columns of
+  the S5 results.csv (experiments_20261008-160406) predate the fix (re-run the strategy study to refresh them).
+- `MouseSession` got hooks (`update_pose`, `measure`, `report_extra`, `angle_hint`, MODE / TITLE / key rows) and draws
+  the last known probe position in red when the pose is lost; `Acquirer.break_stretch()`; `mouse_filename(mode=)`.
+- Menu: 6 `tracked`, 10 tracking-error study (`experiments --errors`); later steps now 11-15.
+
+## Clinical version (2026-10-09)
+
+On request: the developer apps stay as they are (`python -m orvue_us_inverse dev`); a clinical version with a
+single window is the default (`python -m orvue_us_inverse`, `clinical/app.py`): B-MODE and INVERSE MAPPING tabs
+(inverse mapping is an imaging mode next to B-mode; Doppler / Elastography placeholders), case drop-down and probe
+calibration in the header.
+
+- B-MODE tab: `bmode.demo`'s loop body as `BModeTab` (same `simulator_window` / `clinical_view` layout and keys);
+  the IMAGING MODE tabs are drawn by the clinical module (`modes_y=None` to `simulator_window`), so `bmode.py` is
+  unchanged.
+- INVERSE MAPPING tab (`clinical/mapping_tab.py`, decided with the user: 3D-centred): sources scripted / mouse /
+  camera probe in one window (`MappingSession(TrackedSession)`), record button, live B-mode at the probe (also
+  before recording), structures found (volume per group; after Complete the evaluation per structure), large 3D
+  view, camera view with the AR overlay, sweep map, status, speed. Lane guides only for the scripted sweep (the user:
+  the 20 % guides do not matter when the probe moves freely).
+- `poses.ScriptedPose`: the scripted plan played in an app, one captured frame per loop (advance() jumps to the next
+  triggering sample), so no frame is skipped; a full plan gives exactly `expected_frames()`.
+- AR overlay (`clinical/ar.py`): shallowest reconstructed structure per (x, y) column, colours of the 3D view,
+  depth-coded (bright / opaque at the surface, darker / transparent at 50 mm), outlines; projected onto the camera
+  image as the phantom's z = 0 plane (homography from `T_cam_phantom`, K, dist). Refreshed with the 3D view.
+- `TrackedSession.latched`: recording switched on by a button (no key held).
+- Checked headless with the synthetic camera scene through a real `ProbeTracker` (screenshots of both tabs, a
+  scripted part sweep plus camera, complete). Not yet checked with the D405 and the physical probe.
+- Review round 1 (2026-10-09, on request): SPACE switches recording on / off like the RECORD button for every source
+  (camera no longer hold-to-record; mouse recording without a button held, the probe follows the mouse over the map);
+  CASE drop-down in the header of both tabs (`CaseDropdown`; a case change starts a new mapping, not while
+  recording); the menu items 2 and 3 were the same window, so the clinical menu is gone: `python -m orvue_us_inverse`
+  opens the window directly, and "Calibrate probe" in its header runs the calibration (`CalibrationRoutine`) in the
+  same window (`CalibrationView`).
+- Review round 2: the mouse wheel turns the probe (5 deg, like q / e) in the B-MODE tab too.
+- Tests: `tests/clinical/test_clinical.py` (11).
+
 ## Tests
 
-`python -m pytest tests` after S6 (2026-10-09): **149 passed, 1 xfailed** in 194 s (S5: 133 passed, 1 xfailed; S6 adds
-14 in `tests/mapping/test_mouse.py`, the mixed-B-mode tests in `test_sweep_io.py` (format 2, format 1 loading) and
-`test_recon.py` (intensity only from frames with an image); anatomy + tracking 58 passed, 1 xfailed, as upstream). The default 0.25 mm
+`python -m pytest tests` after the clinical version, review round 1 (2026-10-09): **175 passed, 1 xfailed** in 287 s
+(S7: 165 passed; the clinical version adds 10 in `tests/clinical/test_clinical.py`). After S7: 165 passed, 1 xfailed in 239 s (S6: 149 passed, 1 xfailed; S7 adds
+7 in `tests/mapping/test_errors.py` incl. the filter lag on synthetic camera frames, 8 in `test_tracked.py`, 1 in
+`test_experiments.py`; anatomy + tracking 58 passed, 1 xfailed, as upstream). The default 0.25 mm
 spacing made some sweeps in the tests longer; slowest: S5 2-run grid ~26 s, S2 block sweep ~12 s, S6 coverage ~12 s. Slowest mapping
 tests: the S2 ground-truth block sweep (~12 s), the S0 50-frame lane (~4.7 s), S2 incremental vs batch (~4.7 s). The xfail is the known tracking limit
 `300mm_tilt15` with ID 0 + ID 5 (face z error ~1.6 mm). `viewer3d/` is copied but untested here.
@@ -396,7 +491,9 @@ tests: the S2 ground-truth block sweep (~12 s), the S0 50-frame lane (~4.7 s), S
   compare images seed `sim._rng`.
 - Tracking validated on synthetic images only; `get_pose()` is filtered (adds lag); `H_MM` = 0.0; calibration
   from 2026-10-06 (`config/calibration.json`).
-- Physical dummy probe face width (38 mm vs 30 mm) not recorded; check before S7.
+- Physical dummy probe face width (38 mm vs 30 mm) not recorded; check before tracked sweeps.
+- Tracked sweeps use the tracked x, y, yaw with the probe upright on the surface (z = 0), like the simulator, so
+  lifting the probe does not stop the capture; release SPACE to stop.
 - The 3D viewer and the browser 3D view load three.js from a CDN (needs internet).
 - PyVista / VTK were blocked by Windows Application Control at Prep and work since S3: if the block returns,
   the live 3D window reports it and the app continues (snapshot / browser view still work).
@@ -405,5 +502,8 @@ tests: the S2 ground-truth block sweep (~12 s), the S0 50-frame lane (~4.7 s), S
 
 ## Next step
 
-Try a hand-guided sweep (`python -m orvue_us_inverse mouse --no-images` for the faster capture rate) and c; then S7
-(`PLAN_inverse_mapping.md`): camera-tracked probe and pose-error injection.
+With the hardware: calibrate (menu 2), check tracking (menu 1), run a tracked sweep (menu 6) and compare its report
+with a mouse sweep; measure the camera latency; re-check a tracked sweep after the contact fix (REC shows while
+recording; face z is shown for information). The plan's sessions S0-S7 are complete. Try the clinical window
+with the D405 (`python -m orvue_us_inverse`): calibration from the header, camera-probe recording (SPACE), the AR
+overlay on the real board.

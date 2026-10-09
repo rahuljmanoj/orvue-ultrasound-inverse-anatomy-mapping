@@ -49,7 +49,7 @@ from orvue_us_inverse.mapping.recon import LabelCompounder, VoxelGrid
 from orvue_us_inverse.mapping.render import Recon3DOutputs, SliceView, surface_meshes
 from orvue_us_inverse.paths import RESULTS_DIR, SWEEPS_DIR
 from orvue_us_inverse.simulation.anatomy import CASES, COL_TAB
-from orvue_us_inverse.simulation.bmode import top_view
+from orvue_us_inverse.simulation.bmode import BModeSimulator, top_view
 from orvue_us_inverse.ui import clinical as ui
 
 WIN = "Mouse sweep"
@@ -100,9 +100,10 @@ def find_gaps(frames, strokes: list[tuple[int, int]], spacing_mm: float, factor:
     return out
 
 
-def mouse_filename(case: str, cfg: SweepConfig, store_images: bool, stamp: str | None = None) -> str:
+def mouse_filename(case: str, cfg: SweepConfig, store_images: bool, stamp: str | None = None,
+                   mode: str = "mouse") -> str:
     settings = f"sp{cfg.frame_spacing_mm:g}" + ("" if store_images else "_labels")
-    return f"{case}_mouse_{settings}_{stamp or time.strftime('%Y%m%d-%H%M%S')}.npz"
+    return f"{case}_{mode}_{settings}_{stamp or time.strftime('%Y%m%d-%H%M%S')}.npz"
 
 
 class MouseSession(Recon3DOutputs):
@@ -113,7 +114,14 @@ class MouseSession(Recon3DOutputs):
     RECT_BMODE = (TOP_W + GAP, ui.HEADER_H, BMODE_W, TOP_W)
     RECT_3D = (TOP_W + GAP + BMODE_W + GAP, ui.HEADER_H, VIEW3D_W, TOP_W)
     WIDTH = TOP_W + GAP + BMODE_W + GAP + VIEW3D_W + GAP
-    HEIGHT = ui.HEADER_H + TOP_W + STATUS_H + KEYS_H
+    EXTRA_H = 0                                          # extra strip under the status (tracked app: tracking)
+    HEIGHT = ui.HEADER_H + TOP_W + STATUS_H + EXTRA_H + KEYS_H
+    TITLE = ("Mouse sweep", "hand-guided")
+    MODE = "mouse"                                       # recorded in the sweep metadata and the report
+    KEYS_ROW1 = [("hold L", "record"), ("wheel/q/e", "turn 5 deg"), ("0/9", "0 / 90 deg"), ("i", "B-mode on/off"),
+                 ("u", "undo stroke"), ("r", "reset"), ("Esc", "quit")]
+    KEYS_ROW2 = [("c", "complete + report"), ("s", "save sweep"), ("a", "anatomy"), ("g", "truth in 3D"),
+                 ("v", "3D view"), ("3", "snapshot + STL"), ("b", "browser 3D")]
 
     def __init__(self, case: str, cfg: SweepConfig, acq_cfg: AcquisitionConfig, grid_cfg: GridConfig | None = None,
                  clock=time.perf_counter):
@@ -140,7 +148,7 @@ class MouseSession(Recon3DOutputs):
 
     # ---- state
     def restart(self) -> None:
-        self.acq = Acquirer(self.sim, self.cfg, self.acq_cfg, mode="mouse")
+        self.acq = Acquirer(self.sim, self.cfg, self.acq_cfg, mode=self.MODE)
         self.comp = LabelCompounder(self.grid, probe=probe_metadata())
         self.strokes: list[list[int]] = []                  # [start, end) frame indices
         self.gaps: list[tuple[int, int, float]] = []
@@ -282,9 +290,15 @@ class MouseSession(Recon3DOutputs):
                 self.period_s = p if self.period_s is None else 0.8 * self.period_s + 0.2 * p
         self._prev_step_t = now
         frame = None
+        self.update_pose()
         if not self.completed:
             s = self.pose.sample()
-            frame = self.acq.feed(s.T, s.t, s.recording)
+            if s is None:                                    # no pose (tracking lost): no capture, stroke broken
+                self.acq.break_stretch()
+            else:
+                frame = self.acq.feed(s.T, s.t, s.recording)
+                if frame is not None:
+                    self.measure(frame)
         self._prev_captured = frame is not None
         if frame is not None:
             self.comp.insert(frame)
@@ -297,6 +311,19 @@ class MouseSession(Recon3DOutputs):
                     self.gaps.append((frame.index - 1, frame.index, d))
             stroke[1] = frame.index + 1
         return frame
+
+    def angle_hint(self) -> str:
+        return "(wheel or q / e: 5 deg, 0 / 9)"
+
+    def update_pose(self) -> None:
+        """Hook at the start of every step (the tracked app reads the tracker and the space key here)."""
+
+    def report_extra(self) -> dict:
+        """Hook: extra fields for the saved sweep metadata and the report."""
+        return {}
+
+    def measure(self, frame) -> None:
+        """Hook: set frame.T_measured before the frame is reconstructed (the tracked app injects pose errors)."""
 
     def undo(self) -> bool:
         """Remove the last stroke (its frames leave the sweep and the reconstruction); not while recording."""
@@ -315,8 +342,9 @@ class MouseSession(Recon3DOutputs):
     def save(self, folder: str = SWEEPS_DIR) -> str:
         sweep = self.acq.sweep
         sweep.metadata.update(strokes=[list(s) for s in self.strokes], gaps=len(self.gaps),
-                              covered_pct=self.coverage()[2], frames_with_bmode=sweep.n_images)
-        path = sweep.save(os.path.join(folder, mouse_filename(self.case, self.cfg, self.acq_cfg.store_images)))
+                              covered_pct=self.coverage()[2], frames_with_bmode=sweep.n_images,
+                              **self.report_extra())
+        path = sweep.save(os.path.join(folder, mouse_filename(self.case, self.cfg, self.acq_cfg.store_images, mode=self.MODE)))
         self.message = f"saved {os.path.basename(path)} ({len(sweep)} frames)"
         return path
 
@@ -327,14 +355,14 @@ class MouseSession(Recon3DOutputs):
         self.completed = True
         if self._instances is None:
             self._instances = instance_masks(self.sim.an, self.grid)
-        folder = os.path.join(results, f"{self.case}_mouse_{time.strftime('%Y%m%d-%H%M%S')}")
+        folder = os.path.join(results, f"{self.case}_{self.MODE}_{time.strftime('%Y%m%d-%H%M%S')}")
         cov = self.coverage()
         self.evaluation, self.final_labels = complete_report(
             self.comp.result(), self.sim.an, self.grid, folder, self.case, gt=self.gt_volume(),
             instances=self._instances, fill=fill, max_gap=max_gap, slice_view=self.slice_view,
-            extra=dict(mode="mouse", frames=len(self.frames), strokes=len(self.strokes), speed_gaps=len(self.gaps),
-                       covered_pct=cov[2], sweep_config=dataclasses.asdict(self.cfg)),
-            title=f"{self.case}: hand-guided (mouse), {len(self.frames)} frames in {len(self.strokes)} strokes, "
+            extra=dict(mode=self.MODE, frames=len(self.frames), strokes=len(self.strokes), speed_gaps=len(self.gaps),
+                       covered_pct=cov[2], sweep_config=dataclasses.asdict(self.cfg), **self.report_extra()),
+            title=f"{self.case}: {self.TITLE[1]}, {len(self.frames)} frames in {len(self.strokes)} strokes, "
                   f"spacing {self.cfg.frame_spacing_mm:g} mm, {cov[2]:.1f}% of the region covered")
         r = self.evaluation.report
         self.message = (f"complete: {100 * r['accuracy_observed']:.1f}% correct, {r['counts']['detected']} detected, "
@@ -442,12 +470,16 @@ class MouseSession(Recon3DOutputs):
             p, q = self.px(self.frames[i].T_true[:2, 3]), self.px(self.frames[j].T_true[:2, 3])
             cv2.line(img, p, q, GAP_BGR, 2, cv2.LINE_AA)
             cv2.circle(img, q, 3, GAP_BGR, -1, cv2.LINE_AA)
-        T = self.pose.sample().T
+        smp = self.pose.sample()
+        lost = smp is None                                   # tracking lost: last known position in red
+        T = smp.T if not lost else BModeSimulator.pose_from_xy_yaw(self.pose.x, self.pose.y, self.pose.yaw)
         o, u = T[:2, 3], T[:2, 0]
         a, b = self.px(o - h * u), self.px(o + h * u)
         rec = self.pose.recording
-        cv2.line(img, a, b, ui.GREEN if rec else ui.GREY, 3, cv2.LINE_AA)
+        cv2.line(img, a, b, ui.RED if lost else (ui.GREEN if rec else ui.GREY), 3, cv2.LINE_AA)
         cv2.circle(img, a, 5, ui.AMBER, -1, cv2.LINE_AA)
+        if lost:
+            ui.text(img, "tracking lost", (b[0] + 6, b[1] + 4), ui.RED, 0.42)
         ui.text(img, "x", (r1 - 12, r0 - 10), ui.GREY, 0.45)
         cv2.arrowedLine(img, (r1 - 60, r0 - 14), (r1 - 20, r0 - 14), ui.GREY, 1, cv2.LINE_AA, tipLength=0.25)
         ui.text(img, "y", (r0 - 30, r1 - 8), ui.GREY, 0.45)
@@ -539,7 +571,7 @@ class MouseSession(Recon3DOutputs):
         lanes, cur = self.guide_lanes()
         left = [("state", state, ui.GREEN if state == "recording" else ui.AMBER),
                 ("probe", f"({self.pose.x:.1f}, {self.pose.y:.1f}) mm"),
-                ("angle", f"{self.pose.yaw:g} deg  (wheel or q / e: 5 deg, 0 / 9)"),
+                ("angle", f"{self.pose.yaw:.0f} deg  {self.angle_hint()}"),
                 ("B-mode", "on (i: off for speed)" if self.bmode_on else "off: labels only (i: on)"),
                 ("lane", "---" if cur is None else f"{cur.k + 1}/{cur.n} (guides at {cur.yaw_deg:g} deg)")]
         right = [("frames", f"{len(self.frames)} in {len(self.strokes)} strokes, {self.acq.sweep.n_images} with B-mode"),
@@ -551,7 +583,7 @@ class MouseSession(Recon3DOutputs):
     def compose(self) -> np.ndarray:
         """The whole window: sweep | B-mode | 3D, then status / speed / message, then keys."""
         img = np.full((self.HEIGHT, self.WIDTH, 3), ui.BG, np.uint8)
-        ui.header(img, "Mouse sweep", f"hand-guided, {self.case}")
+        ui.header(img, self.TITLE[0], f"{self.TITLE[1]}, {self.case}")
         x, y, w, h = self.RECT_TOP
         img[y:y + h, x:x + w] = self.top_image()
         x, y, w, h = self.RECT_BMODE
@@ -590,11 +622,8 @@ class MouseSession(Recon3DOutputs):
         yy = self.speed_meter(img, sx, y0 + 26, self.WIDTH - sx - 20)
         for k, line in enumerate(ui.wrap(self.message, self.WIDTH - sx - 20, 0.42)[:2]):
             ui.text(img, line, (sx, yy + 10 + 18 * k), ui.GREY, 0.42)
-        ui.key_bar(img, [("hold L", "record"), ("wheel/q/e", "turn 5 deg"), ("0/9", "0 / 90 deg"),
-                         ("i", "B-mode on/off"), ("u", "undo stroke"), ("r", "reset"), ("Esc", "quit")],
-                   self.HEIGHT - KEYS_H)
-        ui.key_bar(img, [("c", "complete + report"), ("s", "save sweep"), ("a", "anatomy"), ("g", "truth in 3D"),
-                         ("v", "3D view"), ("3", "snapshot + STL"), ("b", "browser 3D")], self.HEIGHT - KEYS_H // 2)
+        ui.key_bar(img, self.KEYS_ROW1, self.HEIGHT - KEYS_H)
+        ui.key_bar(img, self.KEYS_ROW2, self.HEIGHT - KEYS_H // 2)
         return img
 
 

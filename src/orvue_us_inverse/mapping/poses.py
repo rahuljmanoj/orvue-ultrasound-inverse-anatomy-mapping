@@ -1,5 +1,5 @@
 """
-orvue_us_inverse.mapping.poses - pose sources for a sweep (S1 scripted sweep, S6 mouse; S7 camera to follow).
+orvue_us_inverse.mapping.poses - pose sources for a sweep (S1 scripted sweep, S6 mouse, S7 camera).
 
 ScriptedSweep(cfg) plans serpentine lanes over the region for every yaw in cfg.yaw_list_deg and gives the probe
 pose as a function of simulated time at cfg.speed_mm_s.
@@ -26,6 +26,20 @@ position history for the speed meter.
     pose = MousePose()
     pose.move(x_mm, y_mm); pose.press(); ...; pose.release()
     s = pose.sample()                    # Sample(t, T, recording, lane=None)
+
+TrackedPose (S7) is the camera-tracked dummy probe: update() reads ProbeTracker.get_state() (one-euro filtered,
+calibration applied) and, like the simulator's own tracked mode (bmode.demo: get_xy_yaw, contact on), uses x, y and yaw
+with the probe upright on the surface (z = 0): the tracked face height and tilt (face_z_mm, tilt_deg) are reported but
+not used, since a calibration z offset of a few mm would otherwise put every pose "out of contact" and stop the
+capture. sample() is None while tracking is invalid (no capture then). It extends MousePose, so position, angle, speed
+and the recording flag work the same way (recording = space held, set by the app).
+
+    pose = TrackedPose(tracker)
+    pose.update(); s = pose.sample()     # None when tracking is lost
+
+ScriptedPose (clinical window) plays a ScriptedSweep inside an interactive app: press() starts / resumes,
+release() pauses, advance(acquirer) moves to the next sample the acquirer captures, so every loop captures one
+frame and the playback runs as fast as the capture allows without skipping frames.
 """
 import bisect
 import math
@@ -316,3 +330,129 @@ class MousePose:
 
     def sample(self) -> Sample:
         return Sample(self.t, BModeSimulator.pose_from_xy_yaw(self.x, self.y, self.yaw), self.recording, None)
+
+
+# ---------------------------------------------------------------- camera (S7)
+class TrackedPose(MousePose):
+    """Pose source from a ProbeTracker: the filtered (or raw) pose of the tracked dummy probe, None when invalid."""
+
+    def __init__(self, tracker, filtered: bool = True, clock: Callable[[], float] = time.perf_counter):
+        super().__init__(clock=clock)
+        self.tracker = tracker
+        self.filtered = filtered
+        self.valid = False
+        self.state = None
+        self._T = None
+        self.face_z_mm = None             # tracked face height (diagnostic; the pose uses z = 0)
+        self.tilt_deg = None
+
+    def update(self) -> bool:
+        """Read the tracker's latest state; True when the pose is valid."""
+        self.state = self.tracker.get_state()
+        s = self.state
+        T = (s.T_phantom_probe if self.filtered else s.T_phantom_probe_raw) if s is not None and s.valid else None
+        self.valid = T is not None
+        if self.valid:
+            T = np.asarray(T, np.float64)
+            self.yaw = math.degrees(math.atan2(T[1, 0], T[0, 0]))
+            self.face_z_mm, self.tilt_deg = float(T[2, 3]), s.tilt_deg
+            self._T = BModeSimulator.pose_from_xy_yaw(T[0, 3], T[1, 3], self.yaw).astype(np.float64)
+            self.move(T[0, 3], T[1, 3])
+        return self.valid
+
+    def rotate(self, sign: int) -> None:          # the camera sets the angle
+        pass
+
+    def snap(self, yaw_deg: float) -> None:
+        pass
+
+    def sample(self) -> Sample | None:
+        if not self.valid:
+            return None
+        return Sample(self.t, self._T.copy(), self.recording, None)
+
+
+# ---------------------------------------------------------------- scripted playback in an app (clinical window)
+class ScriptedPose(MousePose):
+    """ScriptedSweep played in an interactive app: the probe follows the planned lanes, one captured frame per
+    loop (advance() jumps to the next sample at which the acquirer captures), so the speed is set by the frame
+    spacing and the capture rate and no frame is skipped. press() starts / resumes, release() pauses; the speed
+    meter uses the wall-clock history like MousePose (cleared at each lane change)."""
+
+    def __init__(self, cfg: SweepConfig | None = None, clock: Callable[[], float] = time.perf_counter):
+        self.plan = ScriptedSweep(cfg)
+        self.samples = list(self.plan.samples(STEP_MM))
+        self.i = 0
+        s = self.samples[0]
+        super().__init__(float(s.T[0, 3]), float(s.T[1, 3]), self._yaw(s), clock=clock)
+        self.playing = False
+        self._started = False
+
+    @staticmethod
+    def _yaw(s: Sample) -> float:
+        return math.degrees(math.atan2(float(s.T[1, 0]), float(s.T[0, 0])))
+
+    @property
+    def done(self) -> bool:
+        return self.i >= len(self.samples) - 1 and not self.playing
+
+    @property
+    def lane(self) -> Lane | None:
+        return self.samples[self.i].lane
+
+    @property
+    def progress(self) -> float:
+        """Fraction of the planned sweep time played."""
+        return self.samples[self.i].t / max(self.plan.duration_s, 1e-9)
+
+    @property
+    def recording(self) -> bool:
+        return self.playing and self.samples[self.i].recording
+
+    def press(self) -> None:
+        if self.i >= len(self.samples) - 1:          # finished: start again from the first lane
+            self.i = 0
+        self.playing = True
+        self._started = self.i > 0                   # resume: continue with the next sample
+
+    def release(self) -> None:
+        self.playing = False
+
+    def rotate(self, sign: int) -> None:             # the plan sets the angle
+        pass
+
+    def snap(self, yaw_deg: float) -> None:
+        pass
+
+    def advance(self, acq) -> None:
+        """Move to the next sample the acquirer captures (acq.triggered); lift-off transitions break the stretch.
+        The first call after press() stays on the current sample. Stops playing at the end of the plan."""
+        if not self.playing:
+            return
+        if not self._started:
+            self._started = True
+            if self.samples[self.i].recording:
+                self._set(self.samples[self.i], jump=True)
+                return
+        jump = False
+        while self.i + 1 < len(self.samples):
+            self.i += 1
+            s = self.samples[self.i]
+            if not s.recording:
+                acq.break_stretch()
+                jump = True
+                continue
+            if acq.triggered(s.T):
+                self._set(s, jump)
+                return
+        self.playing = False                          # end of the plan
+
+    def _set(self, s: Sample, jump: bool) -> None:
+        if jump:
+            self._hist.clear()
+        self.yaw = self._yaw(s)
+        self.move(float(s.T[0, 3]), float(s.T[1, 3]))
+
+    def sample(self) -> Sample:
+        s = self.samples[self.i]
+        return Sample(s.t, s.T, self.recording, s.lane)
