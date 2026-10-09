@@ -30,7 +30,14 @@ def build(path=MANUAL_PDF):
     d.p("Python 3.10 or later. Install once in the project's conda environment:")
     d.code("pip install -r requirements.txt\npip install -e .")
     d.h1("2. Use")
-    d.p(f"Run {C('python -m orvue_us_inverse')} for the menu, or {C('python -m orvue_us_inverse &lt;command&gt;')}.")
+    d.p(f"Run {C('python -m orvue_us_inverse')} to open the Ultrasound Imaging Simulator: one window for "
+        "everything. The case selector and 'Calibrate probe' are in its header (the calibration runs in the same "
+        "window); the IMAGING MODE tabs B-MODE and INVERSE MAPPING (Tab switches) are in the left panel. The inverse "
+        "mapping takes its pose from a scripted sweep, the mouse or the camera-tracked probe (SPACE or RECORD "
+        "switches recording on / off), shows the 3D reconstruction and projects the structures found onto the live "
+        "camera view (AR overlay).")
+    d.p(f"Developer tools: {C('python -m orvue_us_inverse dev')} (menu below) or "
+        f"{C('python -m orvue_us_inverse &lt;command&gt;')}.")
     d.table([["No.", "Step", "What it does", "Command"]]
             + [[num, name, what, cmd] for _, num, name, what, cmd, _ in MENU])
     d.h1("3. Settings")

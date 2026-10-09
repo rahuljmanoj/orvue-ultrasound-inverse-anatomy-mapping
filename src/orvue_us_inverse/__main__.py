@@ -1,30 +1,34 @@
 """
 orvue_us_inverse (python -m orvue_us_inverse) - single entry point of the project.
 
-    python -m orvue_us_inverse                      menu (steps listed in the order of use)
+    python -m orvue_us_inverse                      the Ultrasound Imaging Simulator: one window for B-mode,
+                                                    inverse anatomy mapping and the probe calibration
+    python -m orvue_us_inverse dev                  developer menu (every step and study)
     python -m orvue_us_inverse <command> [options]  (or the console script: orvue-us-inverse <command> [options])
 
-Menu: type a step's number and press Enter. The step runs in its own process and the menu stays in this
+Developer menu: type a step's number and press Enter. The step runs in its own process and the menu stays in this
 console: typing another number closes the running step and starts the new one. 0 exits.
 
 Commands (extra options are passed on to the module):
 
     viewer      check the probe tracking (D405)      orvue_us_inverse.tracking.viewer
     calibrate   probe calibration                    orvue_us_inverse.tracking.calibrate -> config/calibration.json
+    clinical    Ultrasound Imaging Simulator window  orvue_us_inverse.clinical           [--tab bmode|mapping] [--case X] [--no-camera]
     sim         Ultrasound Imaging Simulator         orvue_us_inverse.simulation.bmode   [case] [--track] [--cam-view] [--mouse]
     scripted    scripted sweep, live reconstruction  orvue_us_inverse.mapping.run_scripted [--case X] [--yaw 0 90] [--no-images] [--live3d] ...
     mouse       hand-guided sweep, one window        orvue_us_inverse.mapping.run_mouse [--case X] [--yaw 0] [--no-images]
+    tracked     sweep with the tracked dummy probe   orvue_us_inverse.mapping.run_tracked [--inject jitter=0.5,...] [--mouse]
     recon       reconstruct a saved sweep            orvue_us_inverse.mapping.reconstruct_sweep [sweep.npz] [--voxel 0.5] [--fill] -> output/results/
     evaluate    evaluate a saved sweep (report)      orvue_us_inverse.mapping.evaluate_sweep [sweep.npz] [--voxel 0.5] [--fill] -> output/results/
     experiments sweep-strategy study (headless)      orvue_us_inverse.mapping.run_experiments [--workers N] [--quick] [--yes] -> output/results/
     run         example step                         orvue_us_inverse.core.example
     test        all tests                            pytest tests
     board       tracking board PDF                   orvue_us_inverse.tracking.board     -> docs/print/
-    anatomy     3D anatomy viewer (browser)          orvue_us_inverse.viewer3d           [--case X] [--export]
+    anatomy     3D anatomy viewer (browser)          orvue_us_3inverse.viewer3d           [--case X] [--export]
     manual      rebuild the user manual PDF          orvue_us_inverse.reports.manual     -> docs/
 
 Every step runs from the repository folder; the files it reads and writes are fixed in orvue_us_inverse.paths.
-Add a step: one entry in COMMANDS and one row in MENU.
+Add a step: one entry in COMMANDS and one row in MENU (developer menu).
 """
 import os
 import subprocess
@@ -40,9 +44,11 @@ RELEASE_S = 1.0                 # pause after stopping a step (e.g. so a camera 
 COMMANDS = {
     "viewer": (["-m", "orvue_us_inverse.tracking.viewer"], ROOT),
     "calibrate": (["-m", "orvue_us_inverse.tracking.calibrate"], ROOT),
+    "clinical": (["-m", "orvue_us_inverse.clinical"], ROOT),
     "sim": (["-m", "orvue_us_inverse.simulation.bmode"], ROOT),
     "scripted": (["-m", "orvue_us_inverse.mapping.run_scripted"], ROOT),
     "mouse": (["-m", "orvue_us_inverse.mapping.run_mouse"], ROOT),
+    "tracked": (["-m", "orvue_us_inverse.mapping.run_tracked"], ROOT),
     "recon": (["-m", "orvue_us_inverse.mapping.reconstruct_sweep"], ROOT),
     "evaluate": (["-m", "orvue_us_inverse.mapping.evaluate_sweep"], ROOT),
     "experiments": (["-m", "orvue_us_inverse.mapping.run_experiments"], ROOT),
@@ -53,7 +59,10 @@ COMMANDS = {
     "manual": (["-m", "orvue_us_inverse.reports.manual"], ROOT),
 }
 
-# menu, in the order of use: (group, number, name, what it does, command, options)
+DEFAULT_COMMAND = "clinical"      # python -m orvue_us_inverse without arguments: the one clinical window
+
+# developer menu (python -m orvue_us_inverse dev), in the order of use:
+# (group, number, name, what it does, command, options)
 MENU = [
     ("CAMERA TRACKING", "1", "Check tracking", "camera view, phantom map, readouts", "viewer", []),
     ("CAMERA TRACKING", "2", "Calibrate probe", "yaw and face position", "calibrate", []),
@@ -61,17 +70,20 @@ MENU = [
     ("INVERSE MAPPING", "4", "Scripted sweep", "yaw 0 + 90, live reconstruction + 3D; s saves", "scripted",
      ["--yaw", "0", "90", "--live3d"]),
     ("INVERSE MAPPING", "5", "Mouse sweep", "sweep | B-mode | 3D; hold L to record, c evaluates", "mouse", []),
-    ("INVERSE MAPPING", "6", "Reconstruct latest sweep", "label volume + slice PNGs -> output/results/", "recon",
+    ("INVERSE MAPPING", "6", "Tracked sweep", "camera-tracked probe, hold SPACE; m: mouse", "tracked", []),
+    ("INVERSE MAPPING", "7", "Reconstruct latest sweep", "label volume + slice PNGs -> output/results/", "recon",
      []),
-    ("INVERSE MAPPING", "7", "Evaluate latest sweep", "report vs ground truth -> output/results/", "evaluate",
+    ("INVERSE MAPPING", "8", "Evaluate latest sweep", "report vs ground truth -> output/results/", "evaluate",
      ["--fill"]),
-    ("INVERSE MAPPING", "8", "Sweep-strategy experiments", "headless study (~11 min) -> output/results/",
+    ("INVERSE MAPPING", "9", "Sweep-strategy experiments", "headless study (~11 min) -> output/results/",
      "experiments", []),
-    ("MAIN", "9", "Run example", "writes output/logs/example.txt", "run", []),
-    ("TOOLS", "10", "Run all tests", "no camera needed", "test", []),
-    ("TOOLS", "11", "Tracking board PDF", "regenerate docs/print/tracking_board.pdf", "board", []),
-    ("TOOLS", "12", "3D anatomy viewer", "every case in the browser (three.js)", "anatomy", []),
-    ("TOOLS", "13", "User manual PDF", "rebuild the manual from the code", "manual", []),
+    ("INVERSE MAPPING", "10", "Tracking-error study", "jitter / latency / bias (~11 min) -> output/results/",
+     "experiments", ["--errors"]),
+    ("MAIN", "11", "Run example", "writes output/logs/example.txt", "run", []),
+    ("TOOLS", "12", "Run all tests", "no camera needed", "test", []),
+    ("TOOLS", "13", "Tracking board PDF", "regenerate docs/print/tracking_board.pdf", "board", []),
+    ("TOOLS", "14", "3D anatomy viewer", "every case in the browser (three.js)", "anatomy", []),
+    ("TOOLS", "15", "User manual PDF", "rebuild the manual from the code", "manual", []),
 ]
 PROMPT = "Type a number and press Enter: "
 def command_line(command, options):
@@ -91,17 +103,20 @@ def run(command, options=()):
 
 
 # ---------------------------------------------------------------- menu
-def print_menu(running=None):
+def print_menu(running=None, items=None, title=None, footer=""):
+    items = MENU if items is None else items
     line = "=" * 74
-    print(f"\n{line}\n  Orvue Surgical - Ultrasound Inverse Anatomy Mapping\n{line}")
+    print(f"\n{line}\n  {title or 'Orvue Surgical - Ultrasound Inverse Anatomy Mapping (developer)'}\n{line}")
     group = None
-    for g, num, name, what, _, _ in MENU:
+    for g, num, name, what, _, _ in items:
         if g != group:
             print(f"  {g}")
             group = g
         print(f"   {num:>2}  {name:<30} {what}")
     print("  " + "-" * 72)
     print("    0  Exit")
+    if footer:
+        print(f"\n  {footer}")
     if running:
         print(f"\n  Now running: {running}")
         print("  Type another number to close it and start that step instead.")
@@ -111,7 +126,8 @@ def print_menu(running=None):
 class Runner:
     """Runs one menu step at a time in the background; starting another stops the current one."""
 
-    def __init__(self):
+    def __init__(self, show_menu=print_menu):
+        self.show_menu = show_menu
         self.proc, self.title = None, None
         self.lock = threading.Lock()
 
@@ -148,13 +164,18 @@ class Runner:
                 return
             self.proc = self.title = None
         print(f"\n[main] {title} finished" + ("" if code == 0 else f" (exit code {code})") + ".", flush=True)
-        print_menu()
+        self.show_menu()
         print(PROMPT, end="", flush=True)
 
 
-def menu():
-    runner = Runner()
-    print_menu()
+def menu(items=None, title=None, footer=""):
+    items = MENU if items is None else items
+
+    def show(running=None):
+        print_menu(running, items, title, footer)
+
+    runner = Runner(show)
+    show()
     try:
         while True:
             try:
@@ -162,13 +183,13 @@ def menu():
             except EOFError:                     # no console input (e.g. started from a pipe)
                 choice = "0"
             if choice == "":
-                print_menu(runner.running())
+                show(runner.running())
                 continue
             if choice == "0":
                 return 0
-            item = next((m for m in MENU if m[1] == choice), None)
+            item = next((m for m in items if m[1] == choice), None)
             if item is None:
-                print(f"  '{choice}' is not on the menu: type 0-{len(MENU)}.")
+                print(f"  '{choice}' is not on the menu: type 0-{len(items)}.")
                 continue
             _, num, name, what, command, options = item
             title = f"{num} {name} ({what})"
@@ -187,6 +208,9 @@ def menu():
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     if not argv:
+        print("[main] Ultrasound Imaging Simulator (developer menu: python -m orvue_us_inverse dev)", flush=True)
+        return run(DEFAULT_COMMAND)
+    if argv[0] == "dev":
         return menu()
     if argv[0] in ("-h", "--help"):
         print(__doc__)

@@ -74,3 +74,27 @@ def test_tiny_grid_runs_headless(tmp_path):
 def test_runspec(spec, keys):
     assert len(spec.sweep_keys()) == keys
     assert spec.strategy.startswith("sp0.5_ov40_yaw")
+
+
+def test_error_study_tiny(tmp_path):
+    """S7 error grid, 2 runs (no error / 1 mm jitter) on a coarse sweep: CSV, plots, summary, robust box."""
+    from orvue_us_inverse.mapping.experiments import ERROR_KEYS, ErrorGrid, error_aggregate, robust_box, run_error_study
+    g = ErrorGrid(jitter_mm=(0.0, 1.0), jitter_yaw_deg=(0.0,), latency_ms=(0.0,), bias_x_mm=(0.0,), cases=("normal",),
+                  spacing_mm=2.0)
+    runs = g.runs()
+    assert len(runs) == 2 and runs[0].errors == () and runs[1].errors == (("jitter_mm", 1.0),)
+    assert runs[0].error_model() is None and runs[1].error_model().jitter_mm == 1.0
+    out, rows = run_error_study(g, str(tmp_path / "err"), workers=1, cache_dir=str(tmp_path / "cache"),
+                                log=lambda *a: None)
+    files = set(os.listdir(out))
+    assert {"results_errors.csv", "summary_errors.md", "errors_dice.png", "errors_hd95.png",
+            "errors_topology.png"} <= files
+    with open(os.path.join(out, "results_errors.csv"), encoding="utf-8") as fh:
+        cols = csv.DictReader(fh).fieldnames
+    assert cols[:4] == list(ERROR_KEYS) and "cystic_duct_dice" in cols and "chd_cbd_status" in cols
+    a0, a1 = error_aggregate(rows)
+    assert a0["jitter_mm"] == 0.0 and a1["jitter_mm"] == 1.0 and a0["cystic_duct_dice"] > a1["cystic_duct_dice"]
+    box = robust_box([dict(a0, pass_all=True), dict(a1, pass_all=False)], g)
+    assert box["jitter_mm"] == 0.0 and box["combinations"] == 1
+    with open(os.path.join(out, "summary_errors.md"), encoding="utf-8") as fh:
+        assert "## Tracking accuracy needed" in fh.read()

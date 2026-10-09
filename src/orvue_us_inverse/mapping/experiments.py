@@ -19,6 +19,13 @@ spread over worker processes (concurrent.futures, spawn); no windows.
 Extras for the default strategy (spacing 0.5 mm, 20 % overlap, orientations [0] and [0, 90]): voxel 0.25 mm, and the
 grid shifted by half a voxel in x and y (grid_offset_mm = -voxel / 2) so frames at multiples of 0.5 mm sample voxel
 centres instead of voxel faces (S4 observation).
+
+Error study (S7, ErrorGrid / run_error_study): the default strategy (SweepConfig: 0.25 mm, 20 %, yaw 0) with pose
+errors injected (errors.PoseErrorModel: position jitter, yaw jitter, latency at the sweep speed of 10 mm/s via the
+planned path, bias along x): frames rendered at the true pose, reconstructed at the erroneous one. Output
+results_errors.csv, errors_dice.png, errors_hd95.png, errors_topology.png and summary_errors.md with the tracking
+accuracy needed to keep the cystic duct and the CBD reconstructed (detected, local Dice >= NEED_DICE) and connected
+(GB - CBD topology ok) in every case.
 """
 import csv
 import dataclasses
@@ -26,6 +33,7 @@ import functools
 import math
 import os
 import time
+import zlib
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 
@@ -34,6 +42,7 @@ from scipy import ndimage
 
 from orvue_us_inverse.mapping.acquisition import Acquirer
 from orvue_us_inverse.mapping.config import AcquisitionConfig, GridConfig, SweepConfig
+from orvue_us_inverse.mapping.errors import PoseErrorModel
 from orvue_us_inverse.mapping.evaluate import CLASSES, evaluate, instance_masks, surface_distances
 from orvue_us_inverse.mapping.poses import ScriptedSweep
 from orvue_us_inverse.mapping.probe import make_simulator
@@ -43,6 +52,8 @@ from orvue_us_inverse.paths import EXPERIMENTS_CACHE_DIR
 from orvue_us_inverse.simulation.anatomy import build_case
 
 EXPERIMENTS_CACHE = EXPERIMENTS_CACHE_DIR
+ERROR_KEYS = ("jitter_mm", "jitter_yaw_deg", "latency_ms", "bias_x_mm")
+NEED_DICE = 0.5                        # error study: local Dice the cystic duct and the CBD must keep
 SPEED_MM_S = 10.0
 # runtime model (Prep / S2 / S4 timings on this laptop): labels_image, insert per frame; evaluation per run
 LABELS_S, INSERT_S, EVAL_S = 0.0134, 0.0095, 4.0
@@ -66,6 +77,7 @@ class RunSpec:
     yaws: tuple[float, ...]
     voxel_mm: float = 0.5
     grid_offset_mm: float = 0.0
+    errors: tuple = ()                 # sorted ((PoseErrorModel field, value), ...); () = exact poses
 
     @property
     def orientations(self) -> str:
@@ -74,6 +86,13 @@ class RunSpec:
     @property
     def strategy(self) -> str:
         return f"sp{_key(self.spacing_mm)}_ov{_key(self.overlap_pct)}_yaw{self.orientations}"
+
+    def error_model(self) -> PoseErrorModel | None:
+        """The run's PoseErrorModel (seeded from the run, reproducible), or None without errors."""
+        if not self.errors:
+            return None
+        seed = zlib.crc32(repr((self.case, self.strategy, self.errors)).encode())
+        return PoseErrorModel(**dict(self.errors), seed=seed)
 
     def sweep_keys(self) -> list[tuple[str, float, float, float]]:
         return [(self.case, y, self.spacing_mm, self.overlap_pct) for y in self.yaws]
@@ -155,7 +174,8 @@ def _truth(case: str, voxel_mm: float, offset_mm: float):
 def structure_local_metrics(labels: np.ndarray, gt: np.ndarray, instances: dict, mask: np.ndarray,
                             voxel_mm: float) -> dict[str, dict]:
     """Per structure: Dice, MSD, HD95 between its effective voxels and the reconstructed voxels of its label within
-    LOCAL_DILATE voxels of it (other structures of the same label excluded), inside the evaluation mask."""
+    LOCAL_DILATE voxels of it (other structures of the same label excluded, except voxels the structure shares with
+    them), inside the evaluation mask."""
     eff = {}
     for name, parts in instances.items():
         main = parts.get("lumen") or parts["interior"]
@@ -180,6 +200,7 @@ def structure_local_metrics(labels: np.ndarray, gt: np.ndarray, instances: dict,
             o = np.stack(np.unravel_index(oe, shape), 1) - lo
             keep = np.all((o >= 0) & (o < np.array(sub_shape)), axis=1)
             other[tuple(o[keep].T)] = True
+        other &= ~own                    # voxels shared with a same-label neighbour (e.g. duct / GB neck) stay own
         region = ndimage.binary_dilation(own, iterations=LOCAL_DILATE)
         m = mask[sl]
         a = (labels[sl] == label) & region & m & ~other
@@ -196,11 +217,16 @@ def run_one(spec: RunSpec, cache_dir: str = EXPERIMENTS_CACHE) -> dict:
     an, grid, gt, inst = _truth(spec.case, spec.voxel_mm, spec.grid_offset_mm)
     comp = LabelCompounder(grid)
     n_frames = 0
+    model = spec.error_model()
     for key in spec.sweep_keys():
         sw = Sweep.load(sweep_path(key, cache_dir))
         comp.probe = dict(sw.metadata["probe"])
-        for i in range(0, len(sw), INSERT_CHUNK):
-            comp.insert_batch(sw.frames[i:i + INSERT_CHUNK])
+        frames = sw.frames
+        if model is not None:                            # rendered at T_true, reconstructed at T_measured
+            plan1 = ScriptedSweep(sweep_config([key[1]], key[2], key[3]))
+            frames = model.apply_frames(frames, pose_at=lambda t, p=plan1: p.pose_at(t).T)
+        for i in range(0, len(frames), INSERT_CHUNK):
+            comp.insert_batch(frames[i:i + INSERT_CHUNK])
         n_frames += len(sw)
     raw = comp.result()
     max_gap = max(1, round(spec.spacing_mm / spec.voxel_mm) - 1)
@@ -210,7 +236,9 @@ def run_one(spec: RunSpec, cache_dir: str = EXPERIMENTS_CACHE) -> dict:
     r = ev.report
     local = structure_local_metrics(labels, gt, inst, labels >= 0, grid.voxel_mm)
     plan = ScriptedSweep(sweep_config(spec.yaws, spec.spacing_mm, spec.overlap_pct))
+    err = dict(spec.errors)
     row = dict(case=spec.case, strategy=spec.strategy, spacing_mm=spec.spacing_mm, overlap_pct=spec.overlap_pct,
+               **{k: float(err.get(k, 0.0)) for k in ERROR_KEYS},
                overlap_actual_pct="/".join(f"{plan.overlap_pct[y]:.1f}" for y in spec.yaws),
                orientations=spec.orientations, n_orientations=len(spec.yaws), voxel_mm=spec.voxel_mm,
                grid_offset_mm=spec.grid_offset_mm, lanes=len(plan.lanes), frames=n_frames,
@@ -305,8 +333,9 @@ SETTING_COLUMNS = ["case", "strategy", "spacing_mm", "overlap_pct", "overlap_act
                    "no_voxels", "lumen_dice", "wall_dice", "thin_recall", "min_recall", "lumen_hd95_mm", "runtime_s"]
 
 
-def write_csv(rows: list[dict], path: str) -> str:
-    cols = list(SETTING_COLUMNS)
+def write_csv(rows: list[dict], path: str, first: list[str] | None = None) -> str:
+    """One row per run; columns: first (if given), SETTING_COLUMNS, then every other key in order of appearance."""
+    cols = list(first or []) + [c for c in SETTING_COLUMNS if c not in (first or [])]
     for r in rows:
         cols += [k for k in r if k not in cols]
     with open(path, "w", newline="", encoding="utf-8") as fh:
@@ -573,6 +602,269 @@ def make_plots(rows: list[dict], grid: ExperimentGrid, out_dir: str) -> list[str
     fig.suptitle("Scan time vs quality (mean over cases, 0.5 mm voxels)", fontsize=10)
     fig.tight_layout()
     p = os.path.join(out_dir, "time_vs_quality.png")
+    fig.savefig(p, dpi=100)
+    plt.close(fig)
+    paths.append(p)
+    return paths
+
+
+# ---------------------------------------------------------------- error study (S7)
+@dataclass
+class ErrorGrid:
+    """Default strategy x pose errors (full factorial) x cases."""
+    jitter_mm: tuple[float, ...] = (0.0, 0.5, 1.0, 2.0)
+    jitter_yaw_deg: tuple[float, ...] = (0.0, 0.5, 1.0, 2.0)
+    latency_ms: tuple[float, ...] = (0.0, 33.0, 100.0)
+    bias_x_mm: tuple[float, ...] = (0.0, 1.0)
+    cases: tuple[str, ...] = ("normal", "parallel_cystic_duct", "anterior_cystic_artery")
+    spacing_mm: float = SweepConfig().frame_spacing_mm
+    overlap_pct: float = SweepConfig().overlap_pct
+    yaws: tuple[float, ...] = tuple(SweepConfig().yaw_list_deg)
+
+    def runs(self) -> list[RunSpec]:
+        out = []
+        for c in self.cases:
+            for j in self.jitter_mm:
+                for y in self.jitter_yaw_deg:
+                    for lat in self.latency_ms:
+                        for b in self.bias_x_mm:
+                            err = tuple(sorted((k, float(v)) for k, v in zip(ERROR_KEYS, (j, y, lat, b)) if v))
+                            out.append(RunSpec(c, self.spacing_mm, self.overlap_pct, self.yaws, errors=err))
+        return out
+
+    def sweeps(self) -> list[tuple[str, float, float, float]]:
+        return sorted({k for r in self.runs() for k in r.sweep_keys()})
+
+
+def quick_error_grid() -> ErrorGrid:
+    """Reduced error grid (normal case, 8 runs)."""
+    return ErrorGrid(jitter_mm=(0.0, 1.0), jitter_yaw_deg=(0.0, 1.0), latency_ms=(0.0, 100.0), bias_x_mm=(0.0,),
+                     cases=("normal",))
+
+
+def needs_met(row: dict) -> bool:
+    """Cystic duct and CBD detected with local Dice >= NEED_DICE, and the GB - CBD connection as in the truth."""
+    ok = row.get("topology") == "ok"
+    for n in ("cystic_duct", "chd_cbd"):
+        ok = ok and row.get(f"{n}_status") == "detected" and (row.get(f"{n}_dice") or 0.0) >= NEED_DICE
+    return bool(ok)
+
+
+def error_aggregate(rows: list[dict]) -> list[dict]:
+    """Per error combination, over the cases: all cases meet the needs, mean Dice / HD95 of the duct and the CBD,
+    topology ok count."""
+    groups: dict = {}
+    for r in rows:
+        groups.setdefault(tuple(r[k] for k in ERROR_KEYS), []).append(r)
+    out = []
+    for key, rs in groups.items():
+        a = dict(zip(ERROR_KEYS, key), cases=len(rs), pass_all=all(needs_met(r) for r in rs),
+                 topology_ok=sum(r["topology"] == "ok" for r in rs), lumen_dice=float(np.mean([r["lumen_dice"] for r in rs])))
+        for n in ("cystic_duct", "chd_cbd"):
+            a[f"{n}_dice"] = float(np.mean([r.get(f"{n}_dice") or 0.0 for r in rs]))
+            hd = [r.get(f"{n}_hd95_mm") for r in rs if r.get(f"{n}_hd95_mm") is not None]
+            a[f"{n}_hd95_mm"] = float(np.mean(hd)) if hd else None
+            a[f"{n}_detected"] = sum(r.get(f"{n}_status") == "detected" for r in rs)
+        out.append(a)
+    return sorted(out, key=lambda a: tuple(a[k] for k in ERROR_KEYS))
+
+
+def tolerances(agg: list[dict], grid: ErrorGrid) -> dict:
+    """Per error factor (the others at 0): the largest level up to which every level meets the needs in every case;
+    and whether the combination of those levels (if in the grid) still does."""
+    by_key = {tuple(a[k] for k in ERROR_KEYS): a for a in agg}
+    levels = dict(zip(ERROR_KEYS, (grid.jitter_mm, grid.jitter_yaw_deg, grid.latency_ms, grid.bias_x_mm)))
+    tol = {}
+    for i, k in enumerate(ERROR_KEYS):
+        best = None
+        for lv in sorted(levels[k]):
+            key = tuple(lv if j == i else 0.0 for j in range(len(ERROR_KEYS)))
+            a = by_key.get(key)
+            if a is None or not a["pass_all"]:
+                break
+            best = lv
+        tol[k] = best
+    combo = tuple((tol[k] if tol[k] is not None else 0.0) for k in ERROR_KEYS)
+    a = by_key.get(combo)
+    return dict(per_factor=tol, combination=dict(zip(ERROR_KEYS, combo)),
+                combination_passes=None if a is None else a["pass_all"], robust_box=robust_box(agg, grid))
+
+
+def robust_box(agg: list[dict], grid: "ErrorGrid") -> dict | None:
+    """The largest box of error levels (every factor from 0 up to a limit) in which EVERY combination meets the needs
+    in every case: {factor: limit, 'combinations': n}; ties broken towards the larger position jitter. None when even
+    the error-free run fails."""
+    import itertools
+    by_key = {tuple(a[k] for k in ERROR_KEYS): a for a in agg}
+    levels = [sorted(v) for v in (grid.jitter_mm, grid.jitter_yaw_deg, grid.latency_ms, grid.bias_x_mm)]
+    best = None
+    for idx in itertools.product(*[range(len(lv)) for lv in levels]):
+        box = [lv[:i + 1] for lv, i in zip(levels, idx)]
+        combos = list(itertools.product(*box))
+        if all(by_key.get(c, {}).get("pass_all", False) for c in combos):
+            score = (len(combos), idx[0])
+            if best is None or score > best[0]:
+                best = (score, {k: lv[i] for k, lv, i in zip(ERROR_KEYS, levels, idx)} | {"combinations": len(combos)})
+    return None if best is None else best[1]
+
+
+def run_error_study(grid: ErrorGrid, out_dir: str, workers: int = 8, cache_dir: str = EXPERIMENTS_CACHE,
+                    plots: bool = True, log=print) -> tuple[str, list[dict]]:
+    """Acquire missing sweeps, run every error combination, write results_errors.csv, plots and summary_errors.md."""
+    t0 = time.perf_counter()
+    os.makedirs(out_dir, exist_ok=True)
+    keys = [k for k in grid.sweeps() if not os.path.exists(sweep_path(k, cache_dir))]
+    _pool_map(functools.partial(acquire_sweep, cache_dir=cache_dir), keys, workers, log, "sweeps")
+    t1 = time.perf_counter()
+    runs = grid.runs()
+    rows = _pool_map(functools.partial(run_one, cache_dir=cache_dir), runs, workers, log, "error runs")
+    order = {(r.case, r.errors): i for i, r in enumerate(runs)}
+    rows.sort(key=lambda row: order[(row["case"], tuple(sorted((k, row[k]) for k in ERROR_KEYS if row[k])))])
+    write_csv(rows, os.path.join(out_dir, "results_errors.csv"), first=list(ERROR_KEYS))
+    timing = dict(sweeps_s=t1 - t0, runs_s=time.perf_counter() - t1, workers=workers, sweeps_acquired=len(keys))
+    if plots:
+        make_error_plots(rows, grid, out_dir)
+    write_error_summary(rows, grid, out_dir, timing)
+    log(f"[experiments] error study done in {(time.perf_counter() - t0) / 60:.1f} min -> {out_dir}")
+    return out_dir, rows
+
+
+def error_tables(rows: list[dict], grid: ErrorGrid) -> tuple[str, dict]:
+    agg = error_aggregate(rows)
+    tol = tolerances(agg, grid)
+    head = ("| Jitter (mm) | Yaw jitter (deg) | Latency (ms) | Bias x (mm) | Cystic duct Dice | CBD Dice | "
+            "Cystic duct HD95 (mm) | CBD HD95 (mm) | Topology ok | Needs met |\n|---|---|---|---|---|---|---|---|---|---|")
+
+    def fmt(a):
+        h = [f"{a[n]:.2f}" if a[n] is not None else "-" for n in ("cystic_duct_hd95_mm", "chd_cbd_hd95_mm")]
+        return (f"| {_key(a['jitter_mm'])} | {_key(a['jitter_yaw_deg'])} | {_key(a['latency_ms'])} | "
+                f"{_key(a['bias_x_mm'])} | {a['cystic_duct_dice']:.3f} | {a['chd_cbd_dice']:.3f} | {h[0]} | {h[1]} | "
+                f"{a['topology_ok']}/{a['cases']} | {'yes' if a['pass_all'] else 'NO'} |")
+    one = [a for a in agg if sum(a[k] != 0 for k in ERROR_KEYS) <= 1]
+    lines = ["One factor at a time (the others 0):", "", head] + [fmt(a) for a in one]
+    lines += ["", f"All {len(agg)} combinations: needs met in every case for {sum(a['pass_all'] for a in agg)}.", "",
+              head] + [fmt(a) for a in agg]
+    return "\n".join(lines), tol
+
+
+def write_error_summary(rows: list[dict], grid: ErrorGrid, out_dir: str, timing: dict) -> str:
+    from orvue_us_inverse.mapping.errors import filter_lag
+    table, tol = error_tables(rows, grid)
+    t = tol["per_factor"]
+
+    def lvl(k, unit):
+        return "below the smallest tested level" if t[k] is None else f"<= {_key(t[k])} {unit}"
+    lag10 = filter_lag(10.0)
+    comb = tol["combination"]
+    box = tol["robust_box"]
+    comb_txt = ("passes" if tol["combination_passes"] else "does NOT pass" if tol["combination_passes"] is not None
+                else "is not in the grid")
+    md = ["# Tracking-error study", "",
+          f"Default strategy (spacing {_key(grid.spacing_mm)} mm, {_key(grid.overlap_pct)} % overlap, yaw "
+          f"{'+'.join(_key(y) for y in grid.yaws)}), cases {', '.join(grid.cases)}; oracle labels rendered at the true "
+          f"pose and reconstructed at the pose with the injected error (errors.PoseErrorModel); latency at the sweep "
+          f"speed of {SPEED_MM_S:g} mm/s (100 ms = 1 mm along the sweep). Needs: the cystic duct and the CBD detected "
+          f"with local Dice >= {NEED_DICE} and the GB - CBD connection kept, in every case. {len(rows)} runs" +
+          (f"; sweeps {timing['sweeps_s'] / 60:.1f} min, runs {timing['runs_s'] / 60:.1f} min with "
+           f"{timing['workers']} workers." if timing else "."), "",
+          "## Tracking accuracy needed", "",
+          ("**Robust requirement** (every combination of errors up to these limits keeps both structures "
+           f"reconstructed and connected in every case, {box['combinations']} combinations): position jitter <= "
+           f"{_key(box['jitter_mm'])} mm (1 sigma per axis), yaw jitter <= {_key(box['jitter_yaw_deg'])} deg, latency "
+           f"<= {_key(box['latency_ms'])} ms at {SPEED_MM_S:g} mm/s, bias <= {_key(box['bias_x_mm'])} mm."
+           if box else "**No robust requirement found**: even the error-free run fails the needs."), "",
+          "One factor at a time (the others 0), for comparison - optimistic, because errors combine:", "",
+          f"- Position jitter (1 sigma, per axis): {lvl('jitter_mm', 'mm')}",
+          f"- Yaw jitter (1 sigma): {lvl('jitter_yaw_deg', 'deg')}",
+          f"- Latency at {SPEED_MM_S:g} mm/s: {lvl('latency_ms', 'ms')}",
+          f"- Constant position bias: {lvl('bias_x_mm', 'mm')}",
+          f"- These four limits together ({', '.join(f'{k} {_key(v)}' for k, v in comb.items())}): {comb_txt} "
+          f"(one draw of the jitter; see the full table for the neighbouring combinations).", "",
+          f"For reference: the tracker's one-euro filter alone lags {lag10['lag_ms']:.0f} ms at 10 mm/s "
+          f"({lag10['lag_mm']:.2f} mm); the camera latency adds to it. A bias moves the whole reconstruction rigidly "
+          f"(shapes and connections survive; the S4 metrics count it as a shift), whereas jitter and latency differences "
+          f"between lanes break thin structures apart.", "", "## Results (means over the cases)", "", table, "",
+          "Plots: errors_dice.png, errors_hd95.png, errors_topology.png; every run in results_errors.csv.", ""]
+    path = os.path.join(out_dir, "summary_errors.md")
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(md))
+    return path
+
+
+def resummarize_errors(out_dir: str, grid: ErrorGrid | None = None, plots: bool = True) -> list[dict]:
+    """Rewrite summary_errors.md (and the plots) of an error-study folder from its results_errors.csv."""
+    rows = load_results(os.path.join(out_dir, "results_errors.csv"))
+    grid = grid or ErrorGrid(cases=tuple(dict.fromkeys(r["case"] for r in rows)))
+    if plots:
+        make_error_plots(rows, grid, out_dir)
+    write_error_summary(rows, grid, out_dir, {})
+    return rows
+
+
+def make_error_plots(rows: list[dict], grid: ErrorGrid, out_dir: str) -> list[str]:
+    import matplotlib
+    matplotlib.use("Agg", force=False)
+    import matplotlib.pyplot as plt
+
+    agg = error_aggregate(rows)
+
+    def pick(**fixed):
+        return [a for a in agg if all(a[k] == v for k, v in fixed.items())]
+    cmap = matplotlib.colormaps["viridis"]
+    paths = []
+    for metric, label, fname in (("dice", "local Dice", "errors_dice.png"), ("hd95_mm", "HD95 (mm)", "errors_hd95.png")):
+        fig, axes = plt.subplots(1, 2, figsize=(12, 4.6))
+        ax = axes[0]
+        for i, y in enumerate(grid.jitter_yaw_deg):
+            pts = sorted(pick(jitter_yaw_deg=y, latency_ms=0.0, bias_x_mm=0.0), key=lambda a: a["jitter_mm"])
+            c = cmap(i / max(1, len(grid.jitter_yaw_deg) - 1))
+            for n, ls in (("cystic_duct", "-"), ("chd_cbd", "--")):
+                vals = [(a["jitter_mm"], a[f"{n}_{metric}"]) for a in pts if a[f"{n}_{metric}"] is not None]
+                if vals:
+                    ax.plot(*zip(*vals), ls, marker="o", color=c, label=f"{'duct' if n == 'cystic_duct' else 'CBD'}, "
+                                                                        f"yaw {_key(y)} deg")
+        ax.set_xlabel("position jitter sigma (mm)")
+        ax.set_ylabel(label)
+        ax.set_title("vs jitter (latency 0, bias 0)", fontsize=9)
+        ax.legend(fontsize=7, ncol=2)
+        ax.grid(alpha=0.3)
+        ax = axes[1]
+        for i, b in enumerate(grid.bias_x_mm):
+            pts = sorted(pick(jitter_mm=0.0, jitter_yaw_deg=0.0, bias_x_mm=b), key=lambda a: a["latency_ms"])
+            for n, ls in (("cystic_duct", "-"), ("chd_cbd", "--")):
+                vals = [(a["latency_ms"], a[f"{n}_{metric}"]) for a in pts if a[f"{n}_{metric}"] is not None]
+                if vals:
+                    ax.plot(*zip(*vals), ls, marker="o", color=cmap(0.85 * i),
+                            label=f"{'duct' if n == 'cystic_duct' else 'CBD'}, bias {_key(b)} mm")
+        ax.set_xlabel(f"latency (ms) at {SPEED_MM_S:g} mm/s")
+        ax.set_title("vs latency and bias (no jitter)", fontsize=9)
+        ax.legend(fontsize=7)
+        ax.grid(alpha=0.3)
+        fig.suptitle(f"Cystic duct (solid) and CBD (dashed): {label} vs tracking error (mean over cases)", fontsize=10)
+        fig.tight_layout()
+        p = os.path.join(out_dir, fname)
+        fig.savefig(p, dpi=100)
+        plt.close(fig)
+        paths.append(p)
+    lats = list(grid.latency_ms)
+    fig, axes = plt.subplots(1, len(lats), figsize=(4.2 * len(lats), 4.0), squeeze=False)
+    for ax, lat in zip(axes[0], lats):
+        m = np.full((len(grid.jitter_yaw_deg), len(grid.jitter_mm)), np.nan)
+        for a in pick(latency_ms=lat, bias_x_mm=0.0):
+            m[list(grid.jitter_yaw_deg).index(a["jitter_yaw_deg"]), list(grid.jitter_mm).index(a["jitter_mm"])] = \
+                a["topology_ok"] / a["cases"]
+        im = ax.imshow(m, origin="lower", cmap="RdYlGn", vmin=0, vmax=1)
+        ax.set_xticks(range(len(grid.jitter_mm)), [_key(v) for v in grid.jitter_mm])
+        ax.set_yticks(range(len(grid.jitter_yaw_deg)), [_key(v) for v in grid.jitter_yaw_deg])
+        ax.set_xlabel("position jitter (mm)")
+        ax.set_ylabel("yaw jitter (deg)")
+        ax.set_title(f"latency {_key(lat)} ms, bias 0", fontsize=9)
+        for (i, j), v in np.ndenumerate(m):
+            if np.isfinite(v):
+                ax.text(j, i, f"{v:.2f}", ha="center", va="center", fontsize=8)
+    fig.colorbar(im, ax=axes[0].tolist(), shrink=0.8, label="fraction of cases with the GB - CBD connection")
+    fig.suptitle("Topology (GB - CBD connected through bile) vs tracking error", fontsize=10)
+    p = os.path.join(out_dir, "errors_topology.png")
     fig.savefig(p, dpi=100)
     plt.close(fig)
     paths.append(p)

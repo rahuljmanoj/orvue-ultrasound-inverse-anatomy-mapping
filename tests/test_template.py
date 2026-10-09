@@ -25,8 +25,8 @@ def test_menu_commands_exist():
 
 
 def test_entry_point_menu_exits():
-    out = subprocess.run([sys.executable, "-m", "orvue_us_inverse"], stdin=subprocess.DEVNULL, capture_output=True,
-                         text=True, cwd=paths.REPO_ROOT, timeout=60)
+    out = subprocess.run([sys.executable, "-m", "orvue_us_inverse", "dev"], stdin=subprocess.DEVNULL,
+                         capture_output=True, text=True, cwd=paths.REPO_ROOT, timeout=60)
     assert out.returncode == 0 and "0  Exit" in out.stdout
 
 
