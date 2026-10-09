@@ -13,8 +13,8 @@ o + s*u + d*n, s lateral in [-W/2, W/2], d depth in [0, D], px_mm pixels) and it
 votes of the voxel containing it (nearest-voxel binning, vectorised: one np.unique over voxel * n_classes + label
 per frame, so a frame costs a sort of its ~151 000 pixels rather than an np.add.at per pixel). A voxel's label is the class
 with the most votes; TIE RULE: the lowest class index wins (np.argmax), so the result is deterministic and does not
-depend on insertion order. Voxels never hit stay -1. With images, the mean B-mode intensity per voxel is
-accumulated alongside (NaN where no image pixel landed).
+depend on insertion order. Voxels never hit stay -1. From the frames that have a B-mode image, the mean intensity
+per voxel is accumulated alongside (NaN where no image pixel landed).
 
 Optional elevation splat (splat_mm > 0): every pixel is also inserted at elevation offsets
 -splat_mm/2 .. +splat_mm/2 (step voxel_mm / 2) along v, to model the slice thickness; default 0 = the image plane
@@ -134,10 +134,10 @@ class LabelCompounder:
         """Compounder with the probe geometry stored in the sweep metadata."""
         return cls(grid, probe=sweep.metadata.get("probe"), **kw)
 
-    def _binned(self, frames: list[FrameRecord]) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
-        """Flat voxel index, label and intensity (or None) of every pixel of the frames that lands in the grid."""
-        flats, labs, imgs = [], [], []
-        with_images = all(f.image is not None for f in frames)
+    def _binned(self, frames: list[FrameRecord]):
+        """(flat voxel index, label) of every pixel of the frames that lands in the grid, and (flat index,
+        intensity) of the pixels of the frames that have a B-mode image ((None, None) when none has)."""
+        flats, labs, iflats, imgs = [], [], [], []
         for f in frames:
             lab = f.labels.ravel()
             if lab.min() < 0 or lab.max() >= self.n_classes:
@@ -146,12 +146,15 @@ class LabelCompounder:
                 flat, inside = self.grid.flat_index(pixel_points(f.T_measured, self.probe, e))
                 flats.append(flat)
                 labs.append(lab[inside])
-                if with_images:
+                if f.image is not None:
+                    iflats.append(flat)
                     imgs.append(f.image.ravel()[inside])
         if not flats:
-            return np.zeros(0, np.int64), np.zeros(0, np.int8), None
-        return (np.concatenate(flats), np.concatenate(labs).astype(np.int64),
-                np.concatenate(imgs).astype(np.float64) if with_images else None)
+            return np.zeros(0, np.int64), np.zeros(0, np.int64), None, None
+        flat, lab = np.concatenate(flats), np.concatenate(labs).astype(np.int64)
+        if not imgs:
+            return flat, lab, None, None
+        return flat, lab, np.concatenate(iflats), np.concatenate(imgs).astype(np.float64)
 
     def insert(self, frame: FrameRecord) -> None:
         """Add one frame (pose T_measured)."""
@@ -159,16 +162,33 @@ class LabelCompounder:
 
     def insert_batch(self, frames: list[FrameRecord]) -> None:
         """Add several frames at once (same result as inserting them one by one)."""
-        flat, lab, img = self._binned(list(frames))
+        flat, lab, iflat, img = self._binned(list(frames))
         keys, counts = np.unique(flat * self.n_classes + lab, return_counts=True)
         v = self.votes[keys].astype(np.int64) + counts                 # keys are unique: plain fancy indexing
         self.votes[keys] = np.minimum(v, np.iinfo(np.uint16).max)
         np.add.at(self.hits, keys // self.n_classes, counts.astype(np.uint32))   # a few thousand entries
         if img is not None:
-            uv, inv = np.unique(flat, return_inverse=True)
+            uv, inv = np.unique(iflat, return_inverse=True)
             self.intensity_sum[uv] += np.bincount(inv, weights=img)
             self.intensity_hits[uv] += np.bincount(inv).astype(np.uint32)
         self.n_frames += len(frames)
+
+    def remove_batch(self, frames: list[FrameRecord]) -> None:
+        """Take frames back out (undo): subtracts exactly what insert_batch added for them (votes floor at 0 if a
+        saturated count was involved). The frames must have been inserted before with the same probe and splat."""
+        flat, lab, iflat, img = self._binned(list(frames))
+        keys, counts = np.unique(flat * self.n_classes + lab, return_counts=True)
+        v = self.votes[keys].astype(np.int64) - counts
+        self.votes[keys] = np.maximum(v, 0)
+        vox = np.unique(keys // self.n_classes)
+        hits = self.hits[vox].astype(np.int64)
+        np.subtract.at(hits, np.searchsorted(vox, keys // self.n_classes), counts)
+        self.hits[vox] = np.maximum(hits, 0).astype(np.uint32)
+        if img is not None:
+            uv, inv = np.unique(iflat, return_inverse=True)
+            self.intensity_sum[uv] -= np.bincount(inv, weights=img)
+            self.intensity_hits[uv] -= np.bincount(inv).astype(np.uint32)
+        self.n_frames -= len(frames)
 
     @property
     def observed(self) -> np.ndarray:

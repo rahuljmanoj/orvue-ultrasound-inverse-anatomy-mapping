@@ -13,6 +13,7 @@ Commands (extra options are passed on to the module):
     calibrate   probe calibration                    orvue_us_inverse.tracking.calibrate -> config/calibration.json
     sim         Ultrasound Imaging Simulator         orvue_us_inverse.simulation.bmode   [case] [--track] [--cam-view] [--mouse]
     scripted    scripted sweep, live reconstruction  orvue_us_inverse.mapping.run_scripted [--case X] [--yaw 0 90] [--no-images] [--live3d] ...
+    mouse       hand-guided sweep, one window        orvue_us_inverse.mapping.run_mouse [--case X] [--yaw 0] [--no-images]
     recon       reconstruct a saved sweep            orvue_us_inverse.mapping.reconstruct_sweep [sweep.npz] [--voxel 0.5] [--fill] -> output/results/
     evaluate    evaluate a saved sweep (report)      orvue_us_inverse.mapping.evaluate_sweep [sweep.npz] [--voxel 0.5] [--fill] -> output/results/
     experiments sweep-strategy study (headless)      orvue_us_inverse.mapping.run_experiments [--workers N] [--quick] [--yes] -> output/results/
@@ -41,6 +42,7 @@ COMMANDS = {
     "calibrate": (["-m", "orvue_us_inverse.tracking.calibrate"], ROOT),
     "sim": (["-m", "orvue_us_inverse.simulation.bmode"], ROOT),
     "scripted": (["-m", "orvue_us_inverse.mapping.run_scripted"], ROOT),
+    "mouse": (["-m", "orvue_us_inverse.mapping.run_mouse"], ROOT),
     "recon": (["-m", "orvue_us_inverse.mapping.reconstruct_sweep"], ROOT),
     "evaluate": (["-m", "orvue_us_inverse.mapping.evaluate_sweep"], ROOT),
     "experiments": (["-m", "orvue_us_inverse.mapping.run_experiments"], ROOT),
@@ -58,17 +60,18 @@ MENU = [
     ("SIMULATOR", "3", "Ultrasound Imaging Simulator", "B-mode; m camera / mouse, t camera view", "sim", ["--cam-view"]),
     ("INVERSE MAPPING", "4", "Scripted sweep", "yaw 0 + 90, live reconstruction + 3D; s saves", "scripted",
      ["--yaw", "0", "90", "--live3d"]),
-    ("INVERSE MAPPING", "5", "Reconstruct latest sweep", "label volume + slice PNGs -> output/results/", "recon",
+    ("INVERSE MAPPING", "5", "Mouse sweep", "sweep | B-mode | 3D; hold L to record, c evaluates", "mouse", []),
+    ("INVERSE MAPPING", "6", "Reconstruct latest sweep", "label volume + slice PNGs -> output/results/", "recon",
      []),
-    ("INVERSE MAPPING", "6", "Evaluate latest sweep", "report vs ground truth -> output/results/", "evaluate",
+    ("INVERSE MAPPING", "7", "Evaluate latest sweep", "report vs ground truth -> output/results/", "evaluate",
      ["--fill"]),
-    ("INVERSE MAPPING", "7", "Sweep-strategy experiments", "headless study (~11 min) -> output/results/",
+    ("INVERSE MAPPING", "8", "Sweep-strategy experiments", "headless study (~11 min) -> output/results/",
      "experiments", []),
-    ("MAIN", "8", "Run example", "writes output/logs/example.txt", "run", []),
-    ("TOOLS", "9", "Run all tests", "no camera needed", "test", []),
-    ("TOOLS", "10", "Tracking board PDF", "regenerate docs/print/tracking_board.pdf", "board", []),
-    ("TOOLS", "11", "3D anatomy viewer", "every case in the browser (three.js)", "anatomy", []),
-    ("TOOLS", "12", "User manual PDF", "rebuild the manual from the code", "manual", []),
+    ("MAIN", "9", "Run example", "writes output/logs/example.txt", "run", []),
+    ("TOOLS", "10", "Run all tests", "no camera needed", "test", []),
+    ("TOOLS", "11", "Tracking board PDF", "regenerate docs/print/tracking_board.pdf", "board", []),
+    ("TOOLS", "12", "3D anatomy viewer", "every case in the browser (three.js)", "anatomy", []),
+    ("TOOLS", "13", "User manual PDF", "rebuild the manual from the code", "manual", []),
 ]
 PROMPT = "Type a number and press Enter: "
 def command_line(command, options):

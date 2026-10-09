@@ -18,6 +18,7 @@ run-time output in the gitignored `output/`.
 - [Start a new project from this template](#start-a-new-project-from-this-template)
 - [Setup](#setup)
 - [Quick start](#quick-start)
+- [Scanning by hand (mouse sweep)](#scanning-by-hand-mouse-sweep)
 - [Project layout](#project-layout)
 - [Rules](#rules)
 - [Tests](#tests)
@@ -56,6 +57,10 @@ python -m orvue_us_inverse scripted     scripted sweep with the reconstruction g
                                         [--yaw 0 90] [--overlap 20] [--spacing 0.25] [--speed 10] [--no-images]
                                         [--live3d]); s saves to output/sweeps/, 3 snapshot + STL, b browser 3D,
                                         c complete: evaluate -> output/results/<case>_<time>/ report
+python -m orvue_us_inverse mouse        hand-guided sweep, one window: sweep | B-mode | 3D reconstruction; hold
+                                        the left button to record, i B-mode on / off, speed meter, coverage holes,
+                                        u undo, c evaluate ([--case X] [--yaw 0] [--overlap 20] [--spacing 0.25]
+                                        [--no-images] = start with B-mode off)
 python -m orvue_us_inverse recon        reconstruct a sweep ([sweep.npz, default newest] [--voxel 0.5] [--fill])
                                         -> output/results/recon_<name>.npz + 3 slice PNGs vs ground truth
 python -m orvue_us_inverse evaluate     evaluate a sweep against the ground truth ([sweep.npz] [--voxel 0.5]
@@ -78,6 +83,31 @@ img, lab = sim.render(sim.pose_from_xy_yaw(50, 60, 0), return_labels=True)   # 5
 lab = sim.labels_image(sim.pose_from_xy_yaw(50, 60, 0))                      # labels only (oracle), ~6x faster
 ```
 The console script `orvue-us-inverse` does the same as `python -m orvue_us_inverse`.
+
+## Scanning by hand (mouse sweep)
+
+`python -m orvue_us_inverse mouse` (menu 5). The mouse position is the probe face centre; hold the left button to
+record. One window: the sweep (left), the latest frame (middle), the 3D reconstruction (right; drag to rotate, wheel
+to zoom), status and speed underneath. The middle panel's button "B-mode ON / OFF" (or key i) switches the B-mode
+simulation: off computes only the oracle labels (~13 ms instead of ~78 ms per frame), shown in tissue colours with a
+key, and about doubles the speed limit; the reconstruction and the evaluation use the labels either way. Switch it
+on where you want to see the ultrasound image; `--no-images` starts with it off.
+
+1. Set the probe angle first (key 0), start at one end of a lane band, hold the button and move slowly along the band to
+   the other end; release. Keep the speed meter green: the maximum is frame spacing x capture rate (0.25 mm x
+   ~20 frames/s with labels only = 5 mm/s; with B-mode images about half).
+2. Scan the next band the same way in the opposite direction, following the highlighted band (20 % overlap).
+3. Check the coverage map (key under it): black = not scanned, dark purple -> yellow = imaged once -> many times,
+   cyan = hole (unscanned area enclosed by scanned area), red lines = speed gaps. Rescan holes, gaps and black
+   patches over the anatomy with short strokes, or press u to undo a bad stroke.
+4. Optionally add a 90 degree pass (key 9) where the first pass had gaps. The mouse wheel over the sweep or q / e
+   turn the probe in 5 degree steps, any time (keep the angle constant within a stroke for straight lanes).
+5. Watch the 3D panel: it is rebuilt after every stroke (g adds the true anatomy translucent). The buttons Iso /
+   Top / Axial (from the feet) / Sagittal (from the patient's right), or v, set the view; the box faces are
+   labelled patient R / L, cranial / caudal, anterior (surface) / posterior. b opens the browser 3D view, 3
+   writes a snapshot and STL files.
+6. Press c: the report shows which structures were detected, missed or not covered; c also fills 1-voxel gaps
+   between frames in the 3D volume (not the holes on the map). s saves the sweep, Esc quits.
 
 ## Project layout
 ```
@@ -120,7 +150,8 @@ output/                  generated at run time, gitignored: captures/, logs/, ex
 | `src/orvue_us_inverse/mapping/probe.py` | The only probe source: `PROBE` (every field stated), `FRAME_SHAPE`, `make_simulator` (persistence 0), `simulator_settings`, `probe_metadata` (Prep) |
 | `src/orvue_us_inverse/mapping/config.py` | Settings dataclasses: `GridConfig` (bounds, 0.5 mm voxels, shape, centres), `SweepConfig`, `AcquisitionConfig` (S0) |
 | `src/orvue_us_inverse/mapping/sweep_io.py` | `FrameRecord`, `Sweep` (save / load compressed .npz), `make_metadata` (probe, settings, provenance), `estimate_size_mb` (S0) |
-| `src/orvue_us_inverse/mapping/poses.py` | `ScriptedSweep`: serpentine lanes per yaw, overlap, poses on simulated time, coverage (S1); mouse (S6), camera (S7) to follow |
+| `src/orvue_us_inverse/mapping/poses.py` | `ScriptedSweep`: serpentine lanes per yaw, overlap, poses on simulated time, coverage (S1); `MousePose`: mouse-driven pose, angle, speed (S6); camera (S7) to follow |
+| `src/orvue_us_inverse/mapping/run_mouse.py` | App: hand-guided mouse sweep in one window (sweep, B-mode, 3D) with lane guides, speed meter, coverage holes, speed gaps, undo, complete (S6) |
 | `src/orvue_us_inverse/mapping/acquisition.py` | `Acquirer`: distance / angle-triggered capture of frames into a `Sweep` (S1) |
 | `src/orvue_us_inverse/mapping/run_scripted.py` | App: scripted sweep over the hidden box, top view with lanes and coverage trace, B-mode, save (S1) |
 | `src/orvue_us_inverse/mapping/recon.py` | `VoxelGrid`, `pixel_points`, `LabelCompounder` (votes, hits, intensity), `fill_small_holes`, ground-truth helpers (S2) |
@@ -163,6 +194,7 @@ output/                  generated at run time, gitignored: captures/, logs/, ex
 | `tests/mapping/test_run_scripted.py` | Scripted-sweep app without windows: stepping, drawing, file name, save; menu step |
 | `tests/mapping/test_evaluate.py` | Perfect reconstruction, one-voxel shift, cut cystic duct, not covered vs missed, report files, script, app complete |
 | `tests/mapping/test_experiments.py` | Grid and sweep reuse, runtime estimate, a 2-run grid headless with CSV columns, plots, summary, cache reuse |
+| `tests/mapping/test_mouse.py` | Mouse sweeps with synthetic events: recording gating, turning (keys, wheel), window routing, 3D view presets, speed classes, capture rate, gaps, undo, coverage holes, 3D panel, complete |
 | `tests/mapping/test_render.py` | Slice shapes / colours / idempotence, meshes inside the grid, timing, snapshot, STL, browser page, app outputs, PyVista off-screen |
 | `tests/mapping/test_recon.py` | `pixel_points` = `plane_points`, accuracy against the ground truth, incremental = batch, hole filling, script |
 

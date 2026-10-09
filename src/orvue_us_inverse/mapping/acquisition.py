@@ -73,6 +73,14 @@ class Acquirer:
         self.last, self._new_stretch = frame, False
         return frame
 
+    def truncate(self, n: int) -> list[FrameRecord]:
+        """Keep the first n frames (undo); returns the removed ones. The next recorded pose starts a new stretch."""
+        removed = self.sweep.frames[n:]
+        del self.sweep.frames[n:]
+        self.last = self.sweep.frames[-1] if self.sweep.frames else None
+        self._new_stretch = True
+        return removed
+
     def _capture(self, T: np.ndarray) -> tuple[np.ndarray | None, np.ndarray]:
         if self.acq_cfg.store_images:
             return self.sim.render(T, return_labels=True)

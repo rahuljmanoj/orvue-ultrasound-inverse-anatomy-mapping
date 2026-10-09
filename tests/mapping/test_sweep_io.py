@@ -93,11 +93,30 @@ def test_size_estimate(lane, tmp_path, store_images):
     assert abs(est - actual) <= 0.3 * actual, (est, actual)
 
 
-def test_mixed_images_rejected(lane):
+def test_mixed_images_round_trip(lane, tmp_path):
+    """B-mode switched off and on during a sweep (S6): images stored only for the frames that have one."""
     sim, frames = lane
-    sweep = Sweep({}, frames[:1])
-    with pytest.raises(ValueError):
-        sweep.append(dataclasses.replace(frames[1], image=None))
+    mixed = [f if k % 3 else dataclasses.replace(f, image=None) for k, f in enumerate(frames[:12])]
+    sweep = Sweep({"case": "normal"}, mixed)
+    assert sweep.has_images and sweep.n_images == 8
+    back = Sweep.load(sweep.save(str(tmp_path / "mixed.npz")))
+    _assert_same(sweep, back)
+    import numpy as np_
+    with np_.load(str(tmp_path / "mixed.npz")) as z:
+        assert z["images"].shape[0] == 8 and list(z["image_frames"]) == [k for k in range(12) if k % 3]
+        assert int(z["format_version"]) == 2
+
+
+def test_format_1_still_loads(lane, tmp_path):
+    """A format-1 file (images for every frame, no image_frames) loads unchanged."""
+    sim, frames = lane
+    fr = frames[:4]
+    path = str(tmp_path / "v1.npz")
+    np.savez_compressed(path, index=np.arange(4), t=np.zeros(4), T_true=np.array([f.T_true for f in fr]),
+                        T_measured=np.array([f.T_measured for f in fr]), labels=np.array([f.labels for f in fr]),
+                        images=np.array([f.image for f in fr]), metadata=np.array("{}"), format_version=np.array(1))
+    back = Sweep.load(path)
+    assert back.n_images == 4 and np.array_equal(back.frames[2].image, fr[2].image)
 
 
 def test_frame_record_checks(lane):

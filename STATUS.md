@@ -4,10 +4,10 @@ State of the inverse-mapping project. Updated at the end of every session (plan:
 
 | | |
 |---|---|
-| Repository | rahuljmanoj/orvue-ultrasound-inverse-anatomy-mapping, `main` after the default-spacing merge (branch `default-spacing-025`, 2026-10-08) |
+| Repository | rahuljmanoj/orvue-ultrasound-inverse-anatomy-mapping, `main` after the S6 merge (branch `s6`, 2026-10-09) |
 | Simulator code | copied in from rahuljmanoj/orvue-ultrasound-simulator `e789389`; frozen; see `UPSTREAM.md` |
 | Environment | conda env `orvue-robot`, Python 3.11.16 (`C:/Users/rahul/miniconda3/envs/orvue-robot/python.exe`); import check passed (Prep P2) |
-| Last update | 2026-10-08, after S5 |
+| Last update | 2026-10-09, after S6 |
 
 ## Sessions
 
@@ -25,7 +25,8 @@ State of the inverse-mapping project. Updated at the end of every session (plan:
 | S4 evaluation and "complete" | Done | `mapping/evaluate.py`, script `mapping/evaluate_sweep.py` (menu 6 `evaluate`), key c in `run_scripted.py`; `tests/mapping/test_evaluate.py` (10). Details below |
 | Default spacing 0.25 mm | Done | `SweepConfig` / `--spacing` default 0.5 -> 0.25 mm; tests that check the default updated (401 frames per lane), tests that only need a sweep pinned to 0.5 mm (speed) |
 | S5 sweep-strategy experiments | Done | `mapping/experiments.py`, script `mapping/run_experiments.py` (menu 7 `experiments`); `tests/mapping/test_experiments.py` (5); full grid 156 runs in 16 min. Details below |
-| S6-S7 | Not started | Sweeps and reports in `output/` (gitignored) |
+| S6 mouse sweeps | Done | `poses.MousePose`, app `mapping/run_mouse.py` (menu 5 `mouse`); `tests/mapping/test_mouse.py` (14). Details below |
+| S7 | Not started | Sweeps and reports in `output/` (gitignored) |
 
 ## Prep frames and timing (2026-10-08)
 
@@ -291,11 +292,77 @@ S5 deviations from the prompt / decisions:
   strategy); the best-quality strategy is reported alongside.
 - Menu step 7 `experiments`; later steps now 8-12. `paths.EXPERIMENTS_CACHE_DIR` added.
 
+## S6 mouse sweeps (2026-10-09)
+
+App `python -m orvue_us_inverse mouse` (menu 5). `MousePose` (poses.py) on wall-clock time; `MouseSession`
+(run_mouse.py) holds the state without windows. One pose per loop is offered to the `Acquirer` (default spacing
+0.25 mm); every captured frame goes into the reconstruction. Capture rate = 1 / (EMA of the capture-loop period);
+before it is measured 1 / 0.12 s with B-mode images, 1 / 0.04 s with labels only. Max speed = spacing x capture
+rate (e.g. 0.25 mm x 20 frames/s = 5 mm/s; with B-mode images ~8-10 frames/s -> ~2-2.5 mm/s). Strokes = button
+press to release; u removes the last stroke from the sweep and the reconstruction (`LabelCompounder.remove_batch`,
+exact inverse of the insertion; tested equal to a fresh reconstruction of the remaining frames). Coverage = columns
+with hits (black = none, inferno heat = more hits); holes = unscanned areas enclosed by scanned columns
+(`ndimage.binary_fill_holes`), drawn cyan (a colour the heat map never uses; first version red, confusable with
+lightly scanned columns); gaps = consecutive frames of a stroke > 2 x spacing apart, red lines; colour key under the
+map. c runs the S4 evaluation (`evaluate.complete_report`, shared with the scripted app; report in
+`output/results/<case>_mouse_<time>/` incl. the distance-coloured 3D overlay); its hole filling closes 1-voxel gaps
+in the 3D volume, not the holes on the map. Single window (second review): sweep (left) | latest B-mode (middle) |
+3D reconstruction (right; PyVista off-screen, `live3d.Embedded3D`, drag rotates ~7 ms / step, wheel zooms) with
+status, speed meter and keys underneath; no slice window (the slice view is kept internally for the report's error
+slices). The 3D panel is rebuilt (~0.13 s) only while the button is up (after each stroke, undo, reset, g or c),
+never during a stroke; g shows the true anatomy translucent; after c it shows the evaluated volume. b browser 3D
+view, 3 snapshot + STL. The 3D outputs live in the `render.Recon3DOutputs` mixin used by both apps. 3D view presets
+(buttons Iso / Top / Axial / Sagittal, key v): isometric x right / y towards the viewer / depth down, top = probe's
+view, axial from the feet (radiology convention: patient R on the left), sagittal from the patient's right; box
+faces labelled patient R / L, cranial / caudal, anterior (surface) / posterior (a label is shown when its face is
+edge-on or obliquely in front, so labels never sit over the anatomy), orientation triad L / Ca / P. Probe angle:
+the mouse wheel over the sweep or q / e turn it by 5 deg, 0 / 9 set 0 / 90 deg, any time.
+
+S6 deviations from the prompt / decisions:
+- Key conflict: q is both "rotate" and "quit" in the prompt; q / e rotate, Esc (or closing the window) quits. e is
+  rotate, so the S4 error toggle is not on a key here; after c the slices show the errors.
+- Added after the first review: cyan holes + colour key; browser view (b), snapshot + STL (3), 3D view in the mouse
+  app. Second review: one window with sweep, B-mode and 3D (the separate B-mode, slice and PyVista windows, p and
+  --live3d removed from the mouse app). Third review: the angle lock ("locked while recording unless l", from the
+  prompt) removed with the l key: only the user turns the probe, so a lock protected against nothing; turning is
+  allowed any time (frames are captured every 1 deg of turning) and the mouse wheel over the sweep turns the probe.
+  3D view presets and anatomical face labels added (also in the scripted app's live window). Fourth review: B-mode
+  on / off in the window (caption button, key i; --no-images = start off): off computes only labels_image (~13 ms
+  vs ~78 ms per frame), the panel then shows the labels with a tissue key, the capture-rate measurement restarts
+  at each switch. Because a sweep can now mix frames with and without B-mode, the sweep format went to version 2
+  (`images` + `image_frames` for the frames that have one; format 1 still loads) and the recon intensity volume
+  uses only the frames with an image (tested).
+- The Python OpenCV bindings have no `getMouseWheelDelta`; `run_mouse.wheel_delta` decodes the upper 16 bits.
+- The live 3D camera (both apps) now looks so that x runs right, y towards the viewer and depth down (the first
+  version copied the anatomy viewer's isometric preset, which shows x running to the left).
+- Coverage holes are enclosed unscanned areas (not every unscanned column); covered % is over the 100 x 100 mm
+  region; moving faster than the limit leaves unscanned rows between frames, which show as holes and as red gaps.
+- Lane guides: bands of the orientation in --yaw nearest the probe's yaw (mod 180), current lane = nearest band
+  containing the probe centre.
+- `Acquirer.truncate`, `LabelCompounder.remove_batch` and `evaluate.complete_report` added; `ScriptedPlayback.complete`
+  now uses `complete_report`.
+- Menu: 5 `mouse`; later steps now 6-13.
+- The interactive window was checked headless (screenshot with synthetic strokes); mouse handling in a live window by
+  eye only.
+
+How to scan the region well by hand (also in README):
+1. Snap the yaw first (0), start at one edge of a lane band, press and hold, and move slowly along the band to the
+   far edge; release. Keep the speed meter green (below 80 % of the maximum).
+2. Do the next band the same way in the opposite direction (serpentine); follow the highlighted band so lanes
+   overlap by the guide's 20 %.
+3. After a pass, look at the coverage map: cyan holes, red gap marks and black patches show what was missed; rescan
+   just those spots (short strokes), or u to redo a bad stroke.
+4. Optionally a second pass at 90 (key 9) over the hilum; it adds little with exact poses (S5) but helps where the
+   first pass had gaps.
+5. The 3D panel shows the result after each stroke; press c: the report tells you which structures were not
+   covered or missed.
+
 ## Tests
 
-`python -m pytest tests` after S5 (2026-10-08): **133 passed, 1 xfailed** in 153 s (S4: 128 passed, 1 xfailed; S5 adds
-5 in `tests/mapping/test_experiments.py`, the 2-run grid ~26 s; anatomy + tracking 58 passed, 1 xfailed, as
-upstream). Slowest mapping
+`python -m pytest tests` after S6 (2026-10-09): **149 passed, 1 xfailed** in 194 s (S5: 133 passed, 1 xfailed; S6 adds
+14 in `tests/mapping/test_mouse.py`, the mixed-B-mode tests in `test_sweep_io.py` (format 2, format 1 loading) and
+`test_recon.py` (intensity only from frames with an image); anatomy + tracking 58 passed, 1 xfailed, as upstream). The default 0.25 mm
+spacing made some sweeps in the tests longer; slowest: S5 2-run grid ~26 s, S2 block sweep ~12 s, S6 coverage ~12 s. Slowest mapping
 tests: the S2 ground-truth block sweep (~12 s), the S0 50-frame lane (~4.7 s), S2 incremental vs batch (~4.7 s). The xfail is the known tracking limit
 `300mm_tilt15` with ID 0 + ID 5 (face z error ~1.6 mm). `viewer3d/` is copied but untested here.
 
@@ -338,5 +405,5 @@ tests: the S2 ground-truth block sweep (~12 s), the S0 50-frame lane (~4.7 s), S
 
 ## Next step
 
-S6 (`PLAN_inverse_mapping.md`): mouse sweeps (hand-held speed limit: spacing x frame rate, 0.25 mm at 20 frames/s
-= 5 mm/s).
+Try a hand-guided sweep (`python -m orvue_us_inverse mouse --no-images` for the faster capture rate) and c; then S7
+(`PLAN_inverse_mapping.md`): camera-tracked probe and pose-error injection.

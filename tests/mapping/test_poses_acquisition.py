@@ -175,7 +175,7 @@ def test_short_sweep_save_load(sim, tmp_path):
     back = Sweep.load(acq.sweep.save(str(tmp_path / "short.npz")))
     assert back.metadata == acq.sweep.metadata
     assert SweepConfig(**back.metadata["sweep_config"]) == cfg
-    assert back.has_images and len(back) == 21
+    assert back.has_images and back.n_images == len(back) == 21
     for a, b in zip(acq.sweep.frames, back.frames):
         assert np.array_equal(a.image, b.image) and np.array_equal(a.labels, b.labels)
         assert np.array_equal(a.T_true, b.T_true) and a.t == b.t

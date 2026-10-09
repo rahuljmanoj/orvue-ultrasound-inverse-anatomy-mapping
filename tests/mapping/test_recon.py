@@ -156,6 +156,28 @@ def test_incremental_equals_batch(sim):
     assert 0 <= np.nanmin(inten) and np.nanmax(inten) <= 255
 
 
+def test_intensity_from_frames_with_images_only(sim):
+    """Mixed sweep (B-mode on for some frames): votes use every frame, intensities only the frames with images."""
+    import dataclasses
+    sim._rng = np.random.default_rng(1)
+    cfg = SweepConfig(frame_spacing_mm=0.5)
+    acq = Acquirer(sim, cfg, AcquisitionConfig(store_images=True))
+    for s in ScriptedSweep(cfg).samples():
+        if s.t > 1.0:
+            break
+        acq.feed(s.T, s.t, s.recording)
+    frames = acq.sweep.frames
+    half = [f if k < len(frames) // 2 else dataclasses.replace(f, image=None) for k, f in enumerate(frames)]
+    grid = VoxelGrid(GridConfig())
+    mixed, images_only, labels_all = LabelCompounder(grid), LabelCompounder(grid), LabelCompounder(grid)
+    mixed.insert_batch(half)
+    images_only.insert_batch(frames[:len(frames) // 2])
+    labels_all.insert_batch([dataclasses.replace(f, image=None) for f in frames])
+    assert np.array_equal(mixed.votes, labels_all.votes) and np.array_equal(mixed.hits, labels_all.hits)
+    assert np.array_equal(mixed.intensity_sum, images_only.intensity_sum)
+    assert np.array_equal(mixed.intensity_hits, images_only.intensity_hits)
+
+
 def test_tie_rule_lowest_class_wins():
     grid = VoxelGrid(GridConfig(x_mm=(0, 1), y_mm=(0, 1), z_mm=(0, 1), voxel_mm=0.5))
     c = LabelCompounder(grid)
